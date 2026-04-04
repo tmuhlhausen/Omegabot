@@ -1,0 +1,35 @@
+# NeuralBot OMEGA — Platform API Dependencies
+# Install: pip install -r requirements-backend.txt
+
+# Web framework
+fastapi==0.110.0
+uvicorn[standard]==0.29.0
+python-multipart==0.0.9
+
+# Database
+sqlalchemy==2.0.28
+aiosqlite==0.20.0
+alembic==1.13.1
+# asyncpg==0.29.0        # Uncomment for PostgreSQL
+
+# Authentication
+passlib[bcrypt]==1.7.4
+python-jose[cryptography]==3.3.0
+
+# Payments
+stripe==8.5.0
+
+# Validation
+pydantic[email]==2.6.1
+email-validator==2.1.0
+
+# HTTP client
+aiohttp==3.9.3
+httpx==0.27.0
+
+# Config
+python-dotenv==1.0.1
+
+# Utilities
+orjson==3.9.15
+structlog==24.1.0
