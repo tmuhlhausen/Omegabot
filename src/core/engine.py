@@ -87,6 +87,13 @@ except ImportError:
     _VAULT_AVAILABLE = False
     NeuralBotVaultClient = None
 
+# ── Skill compliance upgrades (§8,§9,§10,§12,§14 — blockchain-grid-bot) ─────
+from ..core.skill_upgrades import (
+    enforce_latency, get_latency_stats, MEVShield, build_min_output,
+    keep_warm, SelfAuditEngine, IntentSolver, metrics as prom_metrics,
+    get_all_upgrade_tasks, SLIPPAGE,
+)
+
 # ── Logging ───────────────────────────────────────────────────────────────────
 structlog.configure(processors=[
     structlog.processors.TimeStamper(fmt="iso"),
@@ -361,6 +368,9 @@ class TradingEngine:
         if self.yield_strategy:
             tasks.append(asyncio.create_task(self._yield_loop(), name="yield"))
 
+        # §3/§12/§14 — Skill compliance upgrades (keep-warm, self-audit, metrics)
+        tasks.extend(get_all_upgrade_tasks(self))
+
         log.info("engine.tasks.started", count=len(tasks))
         await asyncio.gather(*tasks, return_exceptions=True)
 
@@ -406,6 +416,12 @@ class TradingEngine:
             "txHash": tx_hash, "token": token,
             "chain": chain, "timestamp": time.time(),
         })
+
+        # §14: Prometheus metrics
+        prom_metrics.record_trade(
+            strategy=strategy, chain=chain, success=net_usd > 0,
+            profit_usd=net_usd, gas_usd=gas_usd, latency_ms=0.0,
+        )
 
     # ═══════════════════════════════════════════════════════════════════════
     # CORE LOOPS
@@ -802,6 +818,14 @@ class TradingEngine:
         app = web.Application()
         app.router.add_get("/health", health)
         app.router.add_get("/", health)
+
+        # §14: Prometheus metrics endpoint
+        async def prometheus_metrics(request):
+            return web.Response(
+                body=prom_metrics.get_metrics_bytes(),
+                content_type="text/plain; version=0.0.4",
+            )
+        app.router.add_get("/metrics", prometheus_metrics)
 
         runner = web.AppRunner(app)
         await runner.setup()
