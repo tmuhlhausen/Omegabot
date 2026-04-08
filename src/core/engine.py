@@ -49,7 +49,17 @@ from typing import Optional
 
 import aiohttp
 import structlog
-import uvloop
+try:
+    import winloop as uvloop   # Windows replacement
+    asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
+    print("✅ Winloop installed — full uvloop performance on Windows")
+except ImportError:
+    try:
+        import uvloop
+        asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
+    except ImportError:
+        asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+        print("⚠️  Using standard asyncio (no uvloop/Winloop)")
 
 asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
 
