@@ -61,8 +61,6 @@ except ImportError:
         asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
         print("⚠️  Using standard asyncio (no uvloop/Winloop)")
 
-asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
-
 # ── Core imports ──────────────────────────────────────────────────────────────
 from ..vault.key_manager import vault
 from ..vault.nonce_manager import NonceManager
