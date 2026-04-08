@@ -50,7 +50,7 @@ tenacity==8.2.3
 python-dotenv==1.0.1
 
 # ── Optional: scipy for Savitzky-Golay (PCFTN Layer 3) ───────────────────────
-# scipy==1.12.0  # uncomment if available; numpy fallback exists
+scipy==1.12.0  # uncomment if available; numpy fallback exists
 
 # ── Optional: Fast JSON (engine falls back to stdlib json) ────────────────────
 orjson==3.9.12
