@@ -70,6 +70,12 @@ from ..capital.aave_client import AaveClient
 from ..predictive.garch import GarchRegistry
 from ..predictive.market_intel import MarketIntelligenceHub
 from ..predictive.pcftn import pcftn_registry
+from ..predictive.formula_engine import build_default_formula_engine
+from ..strategies.expansion_router import ExpansionRouter, ExpansionState
+from ..core.asset_universe import AssetUniverse
+from ..core.feature_flags import FeatureFlags
+from ..risk.autonomous_risk_brain import AutonomousRiskBrain, RiskSnapshot
+from ..simulation.digital_twin import DigitalTwin, ReplayEvent
 from ..scanning.liquidation_scanner import LiquidationScanner
 from ..strategies.liquidation_executor import LiquidationExecutor
 from ..strategies.flash_arb import FlashArbStrategy
@@ -79,7 +85,7 @@ from ..monitoring.platform_reporter import init_reporter, TradeResult
 
 # ── Advanced strategies (graceful import — won't crash if missing) ────────────
 try:
-    from strategies.advanced_strategies import (
+    from ..strategies.advanced_strategies import (
         MEVStrategy, GMXFundingStrategy, CrossChainArbStrategy, YieldOptimizer,
     )
     _ADVANCED_AVAILABLE = True
@@ -157,6 +163,12 @@ class TradingEngine:
         self.garch_reg = GarchRegistry()
         self.mkt_intel = MarketIntelligenceHub()
         self.pcftn = pcftn_registry
+        self.formula_engine = build_default_formula_engine()
+        self.expansion_router = ExpansionRouter()
+        self.asset_universe = AssetUniverse()
+        self.flags = FeatureFlags()
+        self.risk_brain = AutonomousRiskBrain()
+        self.digital_twin = DigitalTwin()
 
         # ── Core strategies ───────────────────────────────────────────────
         self.liq_executor: Optional[LiquidationExecutor] = None
@@ -922,6 +934,21 @@ class TradingEngine:
         # Prices
         s.prices = {k: round(v, 4) for k, v in self._price_cache.items()}
 
+        # Revolutionary expansion telemetry
+        exp = self.expansion_router.allowed(ExpansionState(shared_state.total_profit or 0.0))
+        s.expansion_tier = exp.get("tier", 0)
+        s.unlocked_chains = exp.get("chains", [])
+        s.unlocked_exchanges = exp.get("exchanges", [])
+        s.active_assets = self.asset_universe.active_symbols()
+        risk_mode = self.risk_brain.classify(RiskSnapshot(
+            volatility=float(getattr(s, "garch_vol_weth", 0.0) or 0.0),
+            drawdown_pct=float(getattr(s, "drawdown_pct", 0.0) or 0.0),
+            liquidation_risk=1.0 if getattr(s, "circuit_paused", False) else 0.1,
+            latency_ms=float(getattr(s, "rpc_latency_ms", 0.0) or 0.0),
+        ))
+        s.risk_mode = risk_mode
+        s.max_position_multiplier = self.risk_brain.max_position_multiplier(risk_mode)
+
     # ═══════════════════════════════════════════════════════════════════════
     # HUD COMMANDS
     # ═══════════════════════════════════════════════════════════════════════
@@ -937,6 +964,8 @@ class TradingEngine:
             "emergency_repay": self._cmd_emergency_repay,
             "benchmark_rpcs": self._cmd_benchmark_rpcs,
             "enable_strategy": self._cmd_enable_strategy,
+            "roadmap_status": self._cmd_roadmap_status,
+            "roadmap_simulate": self._cmd_roadmap_simulate,
         }
         for cmd, handler in cmds.items():
             hud_manager.register_command(cmd, handler)
@@ -991,6 +1020,32 @@ class TradingEngine:
         else:
             self._enabled.discard(strategy)
         return f"{strategy}={'enabled' if enabled else 'disabled'}"
+
+
+    async def _cmd_roadmap_status(self, _):
+        state = ExpansionState(shared_state.total_profit or 0.0)
+        exp = self.expansion_router.allowed(state)
+        formulas = self.formula_engine.list_available(exp["tier"])
+        return {
+            "tier": exp["tier"],
+            "chains": exp["chains"],
+            "exchanges": exp["exchanges"],
+            "assets": self.asset_universe.active_symbols(),
+            "formulas": formulas,
+            "flags": self.flags.to_dict(),
+        }
+
+    async def _cmd_roadmap_simulate(self, data):
+        events = [
+            ReplayEvent(ts=time.time() + i, symbol="WETH", price=3500 + i, signal=((i % 5) - 2) / 4)
+            for i in range(int(data.get("n", 50)))
+        ]
+        result = self.digital_twin.run(events, threshold=float(data.get("threshold", 0.2)))
+        return {
+            "trades": result.trades,
+            "pnl_usd": result.pnl_usd,
+            "max_drawdown_pct": result.max_drawdown_pct,
+        }
 
     # ═══════════════════════════════════════════════════════════════════════
     # SHUTDOWN
