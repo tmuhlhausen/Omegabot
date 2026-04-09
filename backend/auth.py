@@ -77,7 +77,13 @@ logger = logging.getLogger(__name__)
 # ═══════════════════════════════════════════════════════════════════════════════
 
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./neuralbot_omega.db")
-SECRET_KEY = os.getenv("JWT_SECRET", "") or secrets.token_hex(32)
+ENV = os.getenv("ENV", "dev").lower()
+JWT_SECRET_ENV = os.getenv("JWT_SECRET", "").strip()
+if ENV in {"prod", "production", "staging"} and not JWT_SECRET_ENV:
+    raise RuntimeError("JWT_SECRET must be set in production/staging environments")
+if not JWT_SECRET_ENV and ENV == "dev":
+    logger.warning("JWT_SECRET missing in dev; using ephemeral secret")
+SECRET_KEY = JWT_SECRET_ENV or secrets.token_hex(32)
 ALGORITHM = "HS256"
 ACCESS_EXPIRE_MIN = 60
 REFRESH_EXPIRE_DAYS = 30

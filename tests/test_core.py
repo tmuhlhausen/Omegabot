@@ -27,7 +27,7 @@ def event_loop():
 @pytest.fixture
 def mock_w3():
     w3 = AsyncMock()
-    w3.eth.gas_price = asyncio.coroutine(lambda: 100_000_000)()  # 0.1 gwei
+    w3.eth.gas_price = 100_000_000  # 0.1 gwei
     w3.eth.get_transaction_count = AsyncMock(return_value=0)
     w3.eth.block_number = 250_000_000
     w3.eth.send_raw_transaction = AsyncMock(return_value=b"\x00" * 32)
@@ -265,7 +265,7 @@ class TestAdvancedStrategies:
     """Tests for strategies/advanced_strategies.py"""
 
     def test_yield_optimizer_min_capital(self):
-        from strategies.advanced_strategies import YieldOptimizer
+        from src.strategies.advanced_strategies import YieldOptimizer
         yo = YieldOptimizer(w3=MagicMock(), account=MagicMock(), risk_mgr=MagicMock())
 
         # Below minimum
@@ -278,16 +278,16 @@ class TestAdvancedStrategies:
         assert result.apy_total > 0
 
     def test_cross_chain_bridge_routes(self):
-        from strategies.advanced_strategies import CrossChainArbStrategy
+        from src.strategies.advanced_strategies import CrossChainArbStrategy
         assert ("arbitrum", "base") in CrossChainArbStrategy.BRIDGE_ROUTES
         assert ("arbitrum", "polygon") in CrossChainArbStrategy.BRIDGE_ROUTES
 
     def test_mev_min_swap_threshold(self):
-        from strategies.advanced_strategies import MIN_BACKRUN_SWAP_USD
+        from src.strategies.advanced_strategies import MIN_BACKRUN_SWAP_USD
         assert MIN_BACKRUN_SWAP_USD == 50_000
 
     def test_gmx_markets_defined(self):
-        from strategies.advanced_strategies import GMXFundingStrategy
+        from src.strategies.advanced_strategies import GMXFundingStrategy
         assert "ETH-USD" in GMXFundingStrategy.MARKETS
         assert "BTC-USD" in GMXFundingStrategy.MARKETS
 

@@ -70,6 +70,9 @@ from ..capital.aave_client import AaveClient
 from ..predictive.garch import GarchRegistry
 from ..predictive.market_intel import MarketIntelligenceHub
 from ..predictive.pcftn import pcftn_registry
+from ..predictive.formula_engine import build_default_formula_engine
+from ..strategies.expansion_router import ExpansionRouter, ExpansionState
+from ..core.asset_universe import AssetUniverse
 from ..scanning.liquidation_scanner import LiquidationScanner
 from ..strategies.liquidation_executor import LiquidationExecutor
 from ..strategies.flash_arb import FlashArbStrategy
@@ -79,7 +82,7 @@ from ..monitoring.platform_reporter import init_reporter, TradeResult
 
 # ── Advanced strategies (graceful import — won't crash if missing) ────────────
 try:
-    from strategies.advanced_strategies import (
+    from ..strategies.advanced_strategies import (
         MEVStrategy, GMXFundingStrategy, CrossChainArbStrategy, YieldOptimizer,
     )
     _ADVANCED_AVAILABLE = True
@@ -157,6 +160,9 @@ class TradingEngine:
         self.garch_reg = GarchRegistry()
         self.mkt_intel = MarketIntelligenceHub()
         self.pcftn = pcftn_registry
+        self.formula_engine = build_default_formula_engine()
+        self.expansion_router = ExpansionRouter()
+        self.asset_universe = AssetUniverse()
 
         # ── Core strategies ───────────────────────────────────────────────
         self.liq_executor: Optional[LiquidationExecutor] = None
@@ -922,6 +928,13 @@ class TradingEngine:
         # Prices
         s.prices = {k: round(v, 4) for k, v in self._price_cache.items()}
 
+        # Revolutionary expansion telemetry
+        exp = self.expansion_router.allowed(ExpansionState(shared_state.total_profit or 0.0))
+        s.expansion_tier = exp.get("tier", 0)
+        s.unlocked_chains = exp.get("chains", [])
+        s.unlocked_exchanges = exp.get("exchanges", [])
+        s.active_assets = self.asset_universe.active_symbols()
+
     # ═══════════════════════════════════════════════════════════════════════
     # HUD COMMANDS
     # ═══════════════════════════════════════════════════════════════════════
@@ -937,6 +950,7 @@ class TradingEngine:
             "emergency_repay": self._cmd_emergency_repay,
             "benchmark_rpcs": self._cmd_benchmark_rpcs,
             "enable_strategy": self._cmd_enable_strategy,
+            "roadmap_status": self._cmd_roadmap_status,
         }
         for cmd, handler in cmds.items():
             hud_manager.register_command(cmd, handler)
@@ -991,6 +1005,19 @@ class TradingEngine:
         else:
             self._enabled.discard(strategy)
         return f"{strategy}={'enabled' if enabled else 'disabled'}"
+
+
+    async def _cmd_roadmap_status(self, _):
+        state = ExpansionState(shared_state.total_profit or 0.0)
+        exp = self.expansion_router.allowed(state)
+        formulas = self.formula_engine.list_available(exp["tier"])
+        return {
+            "tier": exp["tier"],
+            "chains": exp["chains"],
+            "exchanges": exp["exchanges"],
+            "assets": self.asset_universe.active_symbols(),
+            "formulas": formulas,
+        }
 
     # ═══════════════════════════════════════════════════════════════════════
     # SHUTDOWN
