@@ -79,7 +79,7 @@ from ..monitoring.platform_reporter import init_reporter, TradeResult
 
 # ── Advanced strategies (graceful import — won't crash if missing) ────────────
 try:
-    from strategies.advanced_strategies import (
+    from ..strategies.advanced_strategies import (
         MEVStrategy, GMXFundingStrategy, CrossChainArbStrategy, YieldOptimizer,
     )
     _ADVANCED_AVAILABLE = True

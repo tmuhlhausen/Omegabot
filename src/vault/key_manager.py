@@ -13,7 +13,6 @@ Chain: Arbitrum (tier 1) | Gas: 0 (no on-chain call) | Latency: <1ms
 
 import os
 import sys
-import ctypes
 import logging
 from typing import Optional
 from eth_account import Account
@@ -22,13 +21,9 @@ from eth_account.signers.local import LocalAccount
 logger = logging.getLogger(__name__)
 
 
-def _wipe_bytes(data: bytes) -> None:
-    """Best-effort memory wipe. Python doesn't guarantee this, but we try."""
-    try:
-        ptr = ctypes.cast(id(data), ctypes.POINTER(ctypes.c_char * len(data)))
-        ctypes.memset(ptr, 0, len(data))
-    except Exception:
-        pass  # non-fatal — GC will handle eventually
+def _wipe_bytes(_data: bytes) -> None:
+    """No-op placeholder: CPython cannot guarantee secure zeroization of immutable objects."""
+    return
 
 
 def _load_from_env(name: str) -> str:
@@ -103,7 +98,7 @@ class KeyVault:
         # Create account object
         self._instance = Account.from_key(raw_key)
 
-        # Best-effort wipe of raw key string from memory
+        # NOTE: Python immutable string memory cannot be reliably zeroized.
         _wipe_bytes(raw_key.encode())
         del raw_key
 

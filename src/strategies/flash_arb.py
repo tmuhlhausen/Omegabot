@@ -22,6 +22,7 @@ import asyncio
 import logging
 import time
 from dataclasses import dataclass, field
+import uuid
 from typing import Optional, List
 
 from web3 import AsyncWeb3
@@ -105,6 +106,7 @@ class ArbOpportunity:
     fee_buy: int              # Pool fee tier (3000 = 0.3%)
     fee_sell: int
     timestamp: float = field(default_factory=time.time)
+    trade_id: str = field(default_factory=lambda: uuid.uuid4().hex)
 
 
 @dataclass
@@ -115,6 +117,7 @@ class ExecutionResult:
     tx_hash: str
     latency_ms: float
     error: Optional[str] = None
+    trade_id: str = ""
 
 
 # ─── Trading Pairs ────────────────────────────────────────────────────────────
