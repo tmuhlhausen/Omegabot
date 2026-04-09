@@ -71,11 +71,14 @@ from ..predictive.garch import GarchRegistry
 from ..predictive.market_intel import MarketIntelligenceHub
 from ..predictive.pcftn import pcftn_registry
 from ..predictive.formula_engine import build_default_formula_engine
+from ..predictive.formula_provenance import FormulaProvenanceLedger
 from ..strategies.expansion_router import ExpansionRouter, ExpansionState
+from ..strategies.route_optimizer import RouteOptimizer, RouteOption
 from ..core.asset_universe import AssetUniverse
 from ..core.feature_flags import FeatureFlags
 from ..risk.autonomous_risk_brain import AutonomousRiskBrain, RiskSnapshot
 from ..simulation.digital_twin import DigitalTwin, ReplayEvent
+from ..governance.policy_engine import PolicyEngine, PolicyContext
 from ..scanning.liquidation_scanner import LiquidationScanner
 from ..strategies.liquidation_executor import LiquidationExecutor
 from ..strategies.flash_arb import FlashArbStrategy
@@ -169,6 +172,9 @@ class TradingEngine:
         self.flags = FeatureFlags()
         self.risk_brain = AutonomousRiskBrain()
         self.digital_twin = DigitalTwin()
+        self.formula_ledger = FormulaProvenanceLedger()
+        self.route_optimizer = RouteOptimizer()
+        self.policy_engine = PolicyEngine()
 
         # ── Core strategies ───────────────────────────────────────────────
         self.liq_executor: Optional[LiquidationExecutor] = None
@@ -212,6 +218,10 @@ class TradingEngine:
                 "liquidation,arb,triangular"
             ).split(",")
         )
+
+        # Seed formula provenance ledger
+        self.formula_ledger.upsert("micro_momentum:1.0.0", "omega_core", 0.72)
+        self.formula_ledger.upsert("volatility_guard:1.0.0", "omega_core", 0.66)
 
         # ── Register HUD commands ─────────────────────────────────────────
         self._register_hud_commands()
@@ -1026,6 +1036,14 @@ class TradingEngine:
         state = ExpansionState(shared_state.total_profit or 0.0)
         exp = self.expansion_router.allowed(state)
         formulas = self.formula_engine.list_available(exp["tier"])
+        top_formulas = [f.key for f in self.formula_ledger.top(3)]
+        route_demo = self.route_optimizer.choose([
+            RouteOption("uni_camelot", 0.35, 1.2, 140, 0.97),
+            RouteOption("sushi_uni", 0.42, 0.8, 210, 0.93),
+        ]).name
+        policy_ok, policy_reason = self.policy_engine.evaluate(
+            PolicyContext(operation="expand_chain", risk_mode=getattr(shared_state, "risk_mode", "NORMAL"), amount_usd=250)
+        )
         return {
             "tier": exp["tier"],
             "chains": exp["chains"],
@@ -1033,6 +1051,9 @@ class TradingEngine:
             "assets": self.asset_universe.active_symbols(),
             "formulas": formulas,
             "flags": self.flags.to_dict(),
+            "top_formulas": top_formulas,
+            "route_demo": route_demo,
+            "policy": {"allowed": policy_ok, "reason": policy_reason},
         }
 
     async def _cmd_roadmap_simulate(self, data):

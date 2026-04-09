@@ -64,3 +64,8 @@
 
 ## Execution Rule
 - **Do not remove existing capabilities unless replacement is validated in shadow mode + canary + rollback readiness.**
+
+## Next Implementation Slice (Now In Progress)
+- Formula provenance ledger + top-formula ranking.
+- Route optimizer objective for bridge/exchange path selection.
+- Policy-as-code engine for high-risk operation gating.
