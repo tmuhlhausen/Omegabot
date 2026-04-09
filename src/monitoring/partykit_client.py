@@ -163,7 +163,7 @@ class PartyKitClient:
             asyncio.create_task(self._reconnect())
             return False
 
-    async def send_trade(self, trade: dict) -> bool:
+    async def push_trade(self, trade: dict) -> bool:
         """Push a single trade event for live feed."""
         if not self.is_connected:
             return False
@@ -217,3 +217,8 @@ class PartyKitClient:
             "error_count": self._error_count,
             "last_push_ago": round(time.time() - self._last_push, 1) if self._last_push else None,
         }
+
+
+    async def send_trade(self, trade: dict) -> bool:
+        """Backward-compatible alias for push_trade()."""
+        return await self.push_trade(trade)

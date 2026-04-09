@@ -23,7 +23,8 @@ Chain: Arbitrum | Gas: ~500-800k | Latency target: <100ms
 import asyncio
 import logging
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+import uuid
 from typing import Optional
 
 from web3 import AsyncWeb3
@@ -82,6 +83,7 @@ class LiqTarget:
     debt_to_cover_wei: int
     expected_bonus_pct: float
     health_factor: float
+    trade_id: str = field(default_factory=lambda: uuid.uuid4().hex)
 
 
 @dataclass
@@ -92,6 +94,7 @@ class ExecutionResult:
     tx_hash: Optional[str]
     latency_ms: float
     error: Optional[str] = None
+    trade_id: str = ""
 
 
 class LiquidationExecutor:
@@ -140,7 +143,7 @@ class LiquidationExecutor:
         if not self._executor_contract:
             return ExecutionResult(
                 success=False, profit_usd=0, tx_hash=None,
-                latency_ms=0, error="No executor contract configured",
+                latency_ms=0, error="No executor contract configured", trade_id=target.trade_id,
             )
 
         t0 = time.perf_counter()
@@ -184,6 +187,7 @@ class LiquidationExecutor:
                     success=False, profit_usd=0, tx_hash=None,
                     latency_ms=latency,
                     error=f"Simulation failed: {str(sim_err)[:60]}",
+                    trade_id=target.trade_id,
                 )
 
             # Execute for real
@@ -212,6 +216,7 @@ class LiquidationExecutor:
                 profit_usd=profit,
                 tx_hash=tx_hash.hex(),
                 latency_ms=latency,
+                trade_id=target.trade_id,
             )
 
         except Exception as e:
@@ -219,7 +224,7 @@ class LiquidationExecutor:
             self._executions += 1
             return ExecutionResult(
                 success=False, profit_usd=0, tx_hash=None,
-                latency_ms=latency, error=str(e)[:80],
+                latency_ms=latency, error=str(e)[:80], trade_id=target.trade_id,
             )
 
     @property

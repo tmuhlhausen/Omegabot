@@ -15,6 +15,7 @@ RUN pip install --no-cache-dir --break-system-packages -r requirements.txt
 
 # Copy source
 COPY src/ src/
+COPY backend/ backend/
 COPY strategies/ strategies/
 
 # Non-root
