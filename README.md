@@ -120,3 +120,25 @@ vercel deploy --prod
 Every contract and strategy function passes the Section 10D checklist:
 reentrancy guards, exact approvals, msg.sender validation,
 slippage enforcement, circuit breakers, non-root Docker, env-only keys.
+
+## Current Implementation Status Matrix
+
+| Capability | Status | Notes |
+|---|---|---|
+| Engine import closure | Partial | Missing modules have now been scaffolded and integrated. |
+| Reporting pipeline retry+batch | Implemented | Queue worker + batch flush + bounded retry added. |
+| PartyKit trade API naming | Implemented | Canonical `push_trade()` with `send_trade()` compatibility alias. |
+| Strategy package consistency | Partial | `src/strategies/advanced_strategies.py` is canonical; legacy shim kept for compatibility. |
+| Dependency governance | Partial | Shared constraints file added; full CI drift gate pending. |
+| Container import parity | Implemented | Docker now includes backend package used by optional runtime imports. |
+| Test modernity (py3.11+) | Partial | Legacy coroutine construct removed in core test fixture. |
+| JWT secret safety | Implemented | Production/staging now requires explicit `JWT_SECRET`. |
+| Key memory handling claims | Implemented | Zeroization claim replaced with explicit Python limitations. |
+| End-to-end trade correlation | Partial | `trade_id` added to core trade/result models and payload serialization. |
+
+See `ROADMAP.md` for the multi-phase modernization program.
+
+## Expansion Design References
+
+- Revolutionary roadmap: `docs/REVOLUTION_ROADMAP.md`
+- Contract expansion/security plan: `contracts/SECURITY_EXPANSION_PLAN.md`

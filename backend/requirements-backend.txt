@@ -1,3 +1,4 @@
+-c ../constraints-shared.txt
 # NeuralBot OMEGA — Platform API Dependencies
 # Install: pip install -r requirements-backend.txt
 
