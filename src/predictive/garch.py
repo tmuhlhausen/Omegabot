@@ -1,12 +1,21 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
+
+
+@dataclass
+class _GarchState:
+    last_variance: float = 0.0004
+
 
 class _GarchModel:
     def __init__(self):
         self._vol = 0.02
+        self._state = _GarchState(last_variance=self._vol**2)
 
     def update(self, ret: float) -> float:
         self._vol = max(1e-6, 0.94 * self._vol + 0.06 * abs(ret))
+        self._state.last_variance = self._vol**2
         return self._vol
 
 
@@ -21,3 +30,6 @@ class GarchRegistry:
         if key not in self._models:
             self._models[key] = _GarchModel()
         return self._models[key]
+
+    def get_or_create(self, symbol: str) -> _GarchModel:
+        return self.get(symbol)
