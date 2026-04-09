@@ -142,3 +142,5 @@ See `ROADMAP.md` for the multi-phase modernization program.
 
 - Revolutionary roadmap: `docs/REVOLUTION_ROADMAP.md`
 - Contract expansion/security plan: `contracts/SECURITY_EXPANSION_PLAN.md`
+
+- Massive execution TODO blueprint: `docs/TODO_MASSIVE.md`
