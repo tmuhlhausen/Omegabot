@@ -137,3 +137,8 @@ slippage enforcement, circuit breakers, non-root Docker, env-only keys.
 | End-to-end trade correlation | Partial | `trade_id` added to core trade/result models and payload serialization. |
 
 See `ROADMAP.md` for the multi-phase modernization program.
+
+## Expansion Design References
+
+- Revolutionary roadmap: `docs/REVOLUTION_ROADMAP.md`
+- Contract expansion/security plan: `contracts/SECURITY_EXPANSION_PLAN.md`
