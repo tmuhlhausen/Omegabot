@@ -163,5 +163,6 @@ See `ROADMAP.md` for the multi-phase modernization program.
 - Revolutionary roadmap: `docs/REVOLUTION_ROADMAP.md`
 - Contract expansion/security plan: `contracts/SECURITY_EXPANSION_PLAN.md`
 - Release blueprint: `docs/RELEASE_BLUEPRINT.md`
+- Release checklist: `docs/RELEASE_CHECKLIST.md`
 
 - Massive execution TODO blueprint: `docs/TODO_MASSIVE.md`
