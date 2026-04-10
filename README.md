@@ -125,6 +125,15 @@ Run the full local release gate:
 ./scripts/release_gate.sh
 ```
 
+## Lobby UI (Website)
+
+Static lobby menu prototype lives in `web/`:
+
+```bash
+cd web
+python -m http.server 8080
+```
+
 ## Scaling FSM (Automatic)
 
 | Phase | Profit | Chains | Bots | Pairs | Hosting |
