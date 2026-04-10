@@ -22,10 +22,20 @@ import asyncio
 import logging
 import time
 from dataclasses import dataclass, field
-from typing import Optional, List, Tuple
+from typing import Any, Optional, List, Tuple
 
-from web3 import AsyncWeb3
-from eth_account.signers.local import LocalAccount
+try:
+    from web3 import AsyncWeb3
+except ImportError:  # pragma: no cover - test/runtime fallback
+    class AsyncWeb3:  # type: ignore[override]
+        @staticmethod
+        def to_checksum_address(address: str) -> str:
+            return address
+
+try:
+    from eth_account.signers.local import LocalAccount
+except ImportError:  # pragma: no cover - test/runtime fallback
+    LocalAccount = Any  # type: ignore[misc,assignment]
 
 logger = logging.getLogger(__name__)
 

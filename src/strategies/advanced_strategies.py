@@ -21,8 +21,16 @@ import time
 from dataclasses import dataclass, field
 from typing import Optional, List, Dict, Any
 
-from web3 import AsyncWeb3
-from eth_abi import decode as abi_decode
+try:
+    from web3 import AsyncWeb3
+except ImportError:  # pragma: no cover - test/runtime fallback
+    AsyncWeb3 = Any  # type: ignore[misc,assignment]
+
+try:
+    from eth_abi import decode as abi_decode
+except ImportError:  # pragma: no cover - test/runtime fallback
+    def abi_decode(*_args, **_kwargs):
+        raise RuntimeError("eth_abi is required for calldata decoding")
 
 logger = logging.getLogger(__name__)
 

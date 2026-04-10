@@ -12,7 +12,10 @@ import time
 from dataclasses import dataclass, field
 from typing import Optional, List
 
-import aiohttp
+try:
+    import aiohttp
+except ImportError:  # pragma: no cover - test/runtime fallback
+    aiohttp = None  # type: ignore[assignment]
 
 logger = logging.getLogger(__name__)
 
@@ -94,6 +97,8 @@ class PlatformReporter:
         self._max_retries = int(os.environ.get("REPORT_API_MAX_RETRIES", "3"))
 
     async def start(self) -> None:
+        if aiohttp is None:
+            raise RuntimeError("aiohttp is required to start PlatformReporter")
         if self._session is None:
             self._session = aiohttp.ClientSession()
         self._running = True

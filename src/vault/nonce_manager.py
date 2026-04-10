@@ -13,7 +13,12 @@ AUDIT:
 import asyncio
 import logging
 
-from web3 import AsyncWeb3
+from typing import Any
+
+try:
+    from web3 import AsyncWeb3
+except ImportError:  # pragma: no cover - test/runtime fallback
+    AsyncWeb3 = Any  # type: ignore[misc,assignment]
 
 logger = logging.getLogger(__name__)
 
