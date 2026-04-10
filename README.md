@@ -119,6 +119,12 @@ Install dev test dependencies first:
 pip install -r requirements-dev.txt
 ```
 
+Run the full local release gate:
+
+```bash
+./scripts/release_gate.sh
+```
+
 ## Scaling FSM (Automatic)
 
 | Phase | Profit | Chains | Bots | Pairs | Hosting |
@@ -156,5 +162,6 @@ See `ROADMAP.md` for the multi-phase modernization program.
 
 - Revolutionary roadmap: `docs/REVOLUTION_ROADMAP.md`
 - Contract expansion/security plan: `contracts/SECURITY_EXPANSION_PLAN.md`
+- Release blueprint: `docs/RELEASE_BLUEPRINT.md`
 
 - Massive execution TODO blueprint: `docs/TODO_MASSIVE.md`
