@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>NeuralBot OMEGA — Lobby</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="bg-orb orb-a"></div>
+    <div class="bg-orb orb-b"></div>
+
+    <main class="lobby-shell">
+      <header class="lobby-header">
+        <div>
+          <p class="eyebrow">OMEGA CONTROL GRID</p>
+          <h1>Lobby Command Center</h1>
+          <p class="subtitle">
+            Multi-chain execution dashboard entrypoint with fast navigation,
+            role-first flows, and release-aware action tiles.
+          </p>
+        </div>
+        <button id="themeToggle" class="ghost-btn" type="button">Toggle Theme</button>
+      </header>
+
+      <section class="quick-actions">
+        <button class="action active" data-target="overview">Overview</button>
+        <button class="action" data-target="strategies">Strategies</button>
+        <button class="action" data-target="risk">Risk Grid</button>
+        <button class="action" data-target="release">Release Gate</button>
+      </section>
+
+      <section class="lobby-grid" id="overview">
+        <article class="panel">
+          <h2>Live Snapshot</h2>
+          <ul>
+            <li><span>Chains</span><strong>8 Active</strong></li>
+            <li><span>Strategies</span><strong>10 Routing</strong></li>
+            <li><span>Gate Status</span><strong class="ok">GREEN</strong></li>
+          </ul>
+        </article>
+
+        <article class="panel">
+          <h2>Primary Menu</h2>
+          <nav class="menu-stack">
+            <a href="#" class="menu-item">
+              <span>Launch Engine</span>
+              <small>Start bot loops + telemetry</small>
+            </a>
+            <a href="#" class="menu-item">
+              <span>Open Vault Center</span>
+              <small>Track payouts and splits</small>
+            </a>
+            <a href="#" class="menu-item">
+              <span>Trade Intelligence</span>
+              <small>Inspect strategy signals live</small>
+            </a>
+            <a href="#" class="menu-item">
+              <span>Operator Console</span>
+              <small>Emergency stop + runtime controls</small>
+            </a>
+          </nav>
+        </article>
+
+        <article class="panel">
+          <h2>Release Card</h2>
+          <p class="release-copy">
+            Before deployment run <code>./scripts/release_gate.sh</code> and confirm
+            checklist sign-off.
+          </p>
+          <button class="primary-btn">Run Release Pipeline</button>
+        </article>
+      </section>
+    </main>
+
+    <script src="./app.js"></script>
+  </body>
+</html>

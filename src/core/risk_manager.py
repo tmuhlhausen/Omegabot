@@ -175,7 +175,7 @@ class RiskManager:
 
             # 7. Minimum profit threshold
             # AUDIT[MIN_PROFIT]: Must exceed gas + flash loan fee
-            flash_fee = flash_amount_usd * 0.0005  # 0.05% Aave fee
+            flash_fee = flash_amount_usd * 0.0003  # 0.03% baseline flash fee
             gas_cost_est = gas_gwei * 500_000 * 1e-9 * 3400  # rough ETH gas cost
             min_profit = flash_fee + gas_cost_est + 0.10  # $0.10 buffer
             if expected_profit < min_profit:
@@ -212,12 +212,12 @@ class RiskManager:
             self.state.daily_loss_usd += abs(profit_usd)
 
         logger.info(
-            "risk.trade_recorded",
-            strategy=strategy,
-            profit=round(profit_usd, 4),
-            success=success,
-            consecutive_failures=self.state.consecutive_failures,
-            daily_pnl=round(self.state.daily_pnl_usd, 4),
+            "risk.trade_recorded strategy=%s profit=%.4f success=%s consecutive_failures=%d daily_pnl=%.4f",
+            strategy,
+            round(profit_usd, 4),
+            success,
+            self.state.consecutive_failures,
+            round(self.state.daily_pnl_usd, 4),
         )
 
     # ─────────────────────────────────────────────────────────────────────
@@ -283,10 +283,10 @@ class RiskManager:
 
                 total_collected_usd += usd_value
                 logger.info(
-                    "risk.profit_collected",
-                    asset=asset_addr[:10],
-                    amount=round(balance_human, 6),
-                    usd=round(usd_value, 2),
+                    "risk.profit_collected asset=%s amount=%.6f usd=%.2f",
+                    asset_addr[:10],
+                    round(balance_human, 6),
+                    round(usd_value, 2),
                 )
 
             except Exception as e:
@@ -313,11 +313,11 @@ class RiskManager:
         change_pct = abs(new_price - old) / old
         if change_pct > ANOMALOUS_PRICE_CHANGE_PCT:
             logger.warning(
-                "risk.ANOMALOUS_PRICE",
-                symbol=symbol,
-                old=old,
-                new=new_price,
-                change_pct=round(change_pct * 100, 2),
+                "risk.ANOMALOUS_PRICE symbol=%s old=%s new=%s change_pct=%.2f",
+                symbol,
+                old,
+                new_price,
+                round(change_pct * 100, 2),
             )
             self._pause(f"anomalous_price_{symbol}_{change_pct*100:.1f}%")
             return True
@@ -360,7 +360,7 @@ class RiskManager:
     def _pause(self, reason: str) -> None:
         self.state.paused = True
         self.state.pause_reason = reason
-        logger.warning("risk.PAUSED", reason=reason)
+        logger.warning("risk.PAUSED reason=%s", reason)
 
     def _maybe_reset_daily(self) -> None:
         """Reset daily counters at midnight UTC."""

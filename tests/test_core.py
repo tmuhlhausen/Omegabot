@@ -8,7 +8,6 @@ Uses mocks for Web3, Aave, and external services.
 No real blockchain calls. No real money. No real keys.
 """
 
-import asyncio
 import time
 from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
@@ -16,13 +15,6 @@ import pytest
 # ─────────────────────────────────────────────────────────────────────────────
 # Fixtures
 # ─────────────────────────────────────────────────────────────────────────────
-
-@pytest.fixture
-def event_loop():
-    loop = asyncio.new_event_loop()
-    yield loop
-    loop.close()
-
 
 @pytest.fixture
 def mock_w3():
