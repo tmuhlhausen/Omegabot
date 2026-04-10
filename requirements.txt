@@ -23,7 +23,7 @@ eth-typing==4.0.0
 eth-utils==3.0.0
 
 # ── MEV Protection ───────────────────────────────────────────────────────────
-flashbots==1.3.0
+flashbots==2.0.0
 
 # ── Predictive Intelligence (numpy ONLY — no torch/tf) ───────────────────────
 numpy==1.26.4
