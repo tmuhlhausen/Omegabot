@@ -105,6 +105,20 @@ cd dashboard
 vercel deploy --prod
 ```
 
+## Test Gate (Release)
+
+Use the deterministic test wrapper (prevents third-party pytest plugin autoload issues):
+
+```bash
+./scripts/test.sh
+```
+
+Install dev test dependencies first:
+
+```bash
+pip install -r requirements-dev.txt
+```
+
 ## Scaling FSM (Automatic)
 
 | Phase | Profit | Chains | Bots | Pairs | Hosting |
