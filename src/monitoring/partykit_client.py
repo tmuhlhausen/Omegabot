@@ -19,9 +19,12 @@ import json
 import logging
 import os
 import time
-from typing import Optional
+from typing import Any, Optional
 
-import aiohttp
+try:
+    import aiohttp
+except ImportError:  # pragma: no cover - test/runtime fallback
+    aiohttp = None  # type: ignore[assignment]
 
 logger = logging.getLogger(__name__)
 
@@ -52,8 +55,8 @@ class PartyKitClient:
         )
         self.room = room
         self.secret = secret or os.environ.get("PARTYKIT_SECRET", "")
-        self._ws: Optional[aiohttp.ClientWebSocketResponse] = None
-        self._session: Optional[aiohttp.ClientSession] = None
+        self._ws: Optional[Any] = None
+        self._session: Optional[Any] = None
         self._connected = False
         self._reconnect_delay = RECONNECT_BASE_DELAY
         self._last_push = 0.0
@@ -75,6 +78,8 @@ class PartyKitClient:
 
     async def connect(self) -> None:
         """Establish WebSocket connection with auto-retry."""
+        if aiohttp is None:
+            raise RuntimeError("aiohttp is required to use PartyKitClient")
         if self._session is None:
             self._session = aiohttp.ClientSession()
 
