@@ -12,7 +12,6 @@ Chain: Arbitrum (tier 1) | Gas: 0 (no on-chain call) | Latency: <1ms
 """
 
 import os
-import sys
 import logging
 from typing import Optional
 from eth_account import Account
