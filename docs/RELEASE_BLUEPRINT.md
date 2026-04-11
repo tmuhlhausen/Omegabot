@@ -3,11 +3,15 @@
 ## Objective
 Ship a repeatable, low-risk release process while scaling toward multi-chain, multi-bot production.
 
+Primary tracker: `docs/IMPLEMENTATION_MATRIX.md`.
+
 ---
 
 ## Release Gate v1 (Now)
-- Deterministic test execution (`scripts/test.sh`)
-- Full release gate wrapper (`scripts/release_gate.sh`)
+- IM-046 Deterministic test execution (`scripts/test.sh`)
+- IM-047 Python compile verification (`scripts/release_gate.sh`)
+- IM-048 Dependency health check (`pip check`)
+- IM-049 Matrix-integrity release gate (`scripts/check_implementation_matrix.py`)
 - Async test config pinned (`pytest.ini`)
 - Dev test dependencies pinned (`requirements-dev.txt`)
 
@@ -15,65 +19,64 @@ Ship a repeatable, low-risk release process while scaling toward multi-chain, mu
 
 ## Release Gate v2 (Next)
 1. **Quality Wall**
-   - Add `ruff` + `mypy` + `bandit` into `scripts/release_gate.sh`
-   - Fail release on lint/type/security violations
+   - Extend IM-046 with `ruff` + `mypy` + `bandit`
 2. **Smart Contract Validation**
-   - Add `hardhat test` + gas snapshot + ABI diff checks
+   - Extend IM-021/IM-022 with `hardhat test` + gas snapshot + ABI diff checks
 3. **API Contract Freeze**
-   - Generate OpenAPI snapshot and fail on breaking changes
+   - Extend IM-043 with OpenAPI snapshots + break detection
 4. **Dependency Drift Lock**
-   - Add periodic lockfile refresh policy + CVE scan gate
+   - Extend IM-048 with lockfile refresh policy + CVE scan gate
 
 ---
 
 ## Massive Additions Blueprint (No Removals)
 
 ### Track A — Reliability
-- [ ] Add canary mode for engine loops with automatic rollback.
-- [ ] Introduce circuit-breaker telemetry stream to dashboard.
-- [ ] Add replayable incident timeline artifact per failed run.
+- [ ] IM-037 self-remediation runbooks
+- [ ] IM-040 runtime blast-radius controls
+- [ ] IM-036 reliability timeline artifacts
 
 ### Track B — Product Expansion
-- [ ] Multi-tenant profit attribution dashboard (vault + strategy + chain).
-- [ ] Strategy experiment framework (A/B routing by capital slices).
-- [ ] Auto-generated execution explainability report per trade.
+- [ ] IM-034 profit attribution dashboard
+- [ ] IM-033 strategy experiment framework
+- [ ] IM-030 execution explainability reports
 
 ### Track C — Revenue Infrastructure
-- [ ] Add release channeling: `alpha`, `beta`, `stable`.
-- [ ] Add usage-based billing events pipeline with audit trail.
-- [ ] Add payout reconciliation worker with retry ledger.
+- [ ] IM-044 release-channel entitlements (`alpha`, `beta`, `stable`)
+- [ ] IM-043 usage-based billing audit events
+- [ ] IM-025 payout reconciliation with retry ledger
 
 ### Track D — Ops Automation
-- [ ] GitHub Actions release gate with required checks.
-- [ ] One-command staging deploy script with smoke validation.
-- [ ] Automated changelog generation from commit categories.
+- [ ] IM-041 CI-enforced release gate checks
+- [ ] IM-038 one-command staged canary deploy + smoke validation
+- [ ] IM-050 matrix-driven changelog categories
 
 ---
 
 ## 30-Day Execution Plan
 
 ### Week 1
-- Wire release gate into CI.
-- Add lint/type/security checks.
-- Add contract test job.
+- Wire IM-046/IM-047/IM-049 into CI.
+- Add lint/type/security checks to IM-046.
+- Add contract tests for IM-021/IM-022.
 
 ### Week 2
-- Add canary deployment + smoke validation.
-- Add OpenAPI compatibility checks.
+- Add canary + smoke validation for IM-038.
+- Add API compatibility checks for IM-043.
 
 ### Week 3
-- Add observability dashboards (trade success, latency, HF events).
-- Add dependency and secrets scanning policy.
+- Add dashboards for IM-036 and IM-034.
+- Add dependency/secrets scanning policy for IM-048.
 
 ### Week 4
-- Run beta release cycle with rollback drills.
+- Run beta release cycle + rollback drills (IM-038, IM-040).
 - Promote to stable with signed release artifacts.
 
 ---
 
 ## Exit Criteria for “Release Ready”
-- All release gate steps pass in CI and local.
-- No critical/high security findings.
-- Contract/API compatibility checks green.
-- Canary and rollback flow validated end-to-end.
-- Release notes + changelog generated automatically.
+- IM-046, IM-047, IM-048, and IM-049 pass in CI/local.
+- No critical/high security findings for IM-021 through IM-025.
+- Contract/API compatibility checks green for IM-021/IM-043.
+- Canary and rollback flow validated for IM-038.
+- Release notes/changelog generated with IM-050 references.
