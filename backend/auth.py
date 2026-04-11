@@ -57,7 +57,7 @@ from passlib.context import CryptContext
 from pydantic import BaseModel, EmailStr, Field, validator
 from sqlalchemy import (
     Boolean, Column, DateTime, Float, ForeignKey,
-    Integer, String, Text, create_engine, func,
+    Integer, String, Text, create_engine, func, text,
 )
 from sqlalchemy.orm import DeclarativeBase, Session, relationship, sessionmaker
 
@@ -232,8 +232,12 @@ engine = create_engine(
     connect_args={"check_same_thread": False} if "sqlite" in DATABASE_URL else {},
 )
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-Base.metadata.create_all(bind=engine)
 
+
+def assert_db_connectivity() -> None:
+    """Validate DB connectivity without mutating schema."""
+    with engine.connect() as connection:
+        connection.execute(text("SELECT 1"))
 
 def get_db():
     db = SessionLocal()
@@ -402,6 +406,13 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+
+
+@app.on_event("startup")
+async def startup_db_check() -> None:
+    assert_db_connectivity()
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
