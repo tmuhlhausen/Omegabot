@@ -85,6 +85,22 @@ from ..strategies.flash_arb import FlashArbStrategy
 from ..monitoring.hud_server import shared_state, run_hud_server, manager as hud_manager, TradeRecord
 from ..monitoring.partykit_client import PartyKitClient
 from ..monitoring.platform_reporter import init_reporter, TradeResult
+from ..core.engine_components import (
+    BootstrapComponent,
+    MarketLoopComponent,
+    StrategyLoopComponent,
+    ExecutionLoopComponent,
+    ReportingLoopComponent,
+    ErrorTelemetry,
+)
+from ..core.engine_components.errors import (
+    PriceFeedProcessingError,
+    ScalingEvaluationError,
+    HudSyncError,
+    NonceResyncError,
+    HealthUpdateError,
+)
+from ..core.engine_components.health.supervisor import TaskSupervisor, RestartPolicy
 
 # ── Advanced strategies (graceful import — won't crash if missing) ────────────
 try:
@@ -225,12 +241,22 @@ class TradingEngine:
 
         # ── Register HUD commands ─────────────────────────────────────────
         self._register_hud_commands()
+        self.error_telemetry = ErrorTelemetry()
+        self.bootstrap = BootstrapComponent(self)
+        self.market_loop = MarketLoopComponent(self)
+        self.strategy_loop = StrategyLoopComponent(self)
+        self.execution_loop = ExecutionLoopComponent(self)
+        self.reporting_loop = ReportingLoopComponent(self)
+        self.supervisor = TaskSupervisor(self.error_telemetry)
 
     # ═══════════════════════════════════════════════════════════════════════
     # INITIALIZATION
     # ═══════════════════════════════════════════════════════════════════════
 
     async def initialize(self) -> None:
+        await self.bootstrap.initialize()
+
+    async def _initialize_impl(self) -> None:
         """Boot all subsystems in dependency order."""
         log.info("engine.omega.init.start")
         self._start_time = time.time()
@@ -312,7 +338,7 @@ class TradingEngine:
         await self.reporter.start()
 
         # 12. Advanced strategies (plan-gated)
-        await self._init_advanced_strategies()
+        await self.bootstrap.init_advanced_strategies()
 
         # 13. PartyKit connection
         try:
@@ -326,6 +352,9 @@ class TradingEngine:
         log.info("engine.omega.ready", strategies=list(self._enabled))
 
     async def _init_advanced_strategies(self) -> None:
+        await self._init_advanced_strategies_impl()
+
+    async def _init_advanced_strategies_impl(self) -> None:
         """Initialize advanced strategies based on ENABLED_STRATEGIES env var."""
         if not _ADVANCED_AVAILABLE:
             log.info("engine.advanced.unavailable")
@@ -376,27 +405,28 @@ class TradingEngine:
             loop.add_signal_handler(sig, lambda: asyncio.create_task(self.shutdown()))
 
         # Build task list — core tasks always run
+        base_policy = RestartPolicy(max_restarts=5, backoff_seconds=2.0, failure_budget=8)
         tasks = [
-            asyncio.create_task(self._price_feed_loop(), name="price_feed"),
-            asyncio.create_task(self.liq_scanner.start(), name="liq_scanner"),
-            asyncio.create_task(self._arb_scan_loop(), name="arb_scan"),
-            asyncio.create_task(self._capital_monitor_loop(), name="capital"),
-            asyncio.create_task(self._profit_collect_loop(), name="profit_collect"),
-            asyncio.create_task(self._scaling_loop(), name="scaling"),
-            asyncio.create_task(self._hud_state_loop(), name="hud_state"),
-            asyncio.create_task(self._health_server(), name="health"),
-            asyncio.create_task(self._nonce_resync_loop(), name="nonce_resync"),
+            self.supervisor.supervise("price_feed", self.market_loop.price_feed_loop, RestartPolicy(max_restarts=8, backoff_seconds=3.0, failure_budget=20)),
+            self.supervisor.supervise("liq_scanner", self.liq_scanner.start, base_policy),
+            self.supervisor.supervise("arb_scan", self.strategy_loop.arb_scan_loop, base_policy),
+            self.supervisor.supervise("capital", self.market_loop.capital_monitor_loop, base_policy),
+            self.supervisor.supervise("profit_collect", self.execution_loop.profit_collect_loop, base_policy),
+            self.supervisor.supervise("scaling", self.execution_loop.scaling_loop, base_policy),
+            self.supervisor.supervise("hud_state", self.reporting_loop.hud_state_loop, RestartPolicy(max_restarts=10, backoff_seconds=1.0, failure_budget=25)),
+            self.supervisor.supervise("health", self.reporting_loop.health_server, base_policy),
+            self.supervisor.supervise("nonce_resync", self.execution_loop.nonce_resync_loop, base_policy),
         ]
 
         # Advanced strategy tasks (conditional)
         if self.mev_strategy:
-            tasks.append(asyncio.create_task(self._mev_loop(), name="mev"))
+            tasks.append(self.supervisor.supervise("mev", self.strategy_loop.mev_loop, base_policy))
         if self.gmx_strategy:
-            tasks.append(asyncio.create_task(self._gmx_loop(), name="gmx"))
+            tasks.append(self.supervisor.supervise("gmx", self.strategy_loop.gmx_loop, base_policy))
         if self.xchain_strategy:
-            tasks.append(asyncio.create_task(self._xchain_loop(), name="xchain"))
+            tasks.append(self.supervisor.supervise("xchain", self.strategy_loop.xchain_loop, base_policy))
         if self.yield_strategy:
-            tasks.append(asyncio.create_task(self._yield_loop(), name="yield"))
+            tasks.append(self.supervisor.supervise("yield", self.strategy_loop.yield_loop, base_policy))
 
         # §3/§12/§14 — Skill compliance upgrades (keep-warm, self-audit, metrics)
         tasks.extend(get_all_upgrade_tasks(self))
@@ -458,6 +488,9 @@ class TradingEngine:
     # ═══════════════════════════════════════════════════════════════════════
 
     async def _price_feed_loop(self) -> None:
+        await self.market_loop.price_feed_loop()
+
+    async def _price_feed_loop_impl(self) -> None:
         """Binance WebSocket price feed — all tickers, every tick."""
         import websockets
         try:
@@ -523,8 +556,10 @@ class TradingEngine:
                             if self.risk_mgr:
                                 self.risk_mgr.check_price_anomaly(sym, mid)
 
-                        except Exception:
-                            pass  # Never crash on a single tick
+                        except Exception as exc:
+                            wrapped = PriceFeedProcessingError(str(exc))
+                            self.error_telemetry.record("price_feed_tick", wrapped)
+                            log.warning("price_feed.tick_error", error=str(exc)[:80])
 
             except asyncio.CancelledError:
                 break
@@ -533,6 +568,9 @@ class TradingEngine:
                 await asyncio.sleep(5)
 
     async def _arb_scan_loop(self) -> None:
+        await self.strategy_loop.arb_scan_loop()
+
+    async def _arb_scan_loop_impl(self) -> None:
         """Flash arbitrage scanning — 2-hop and triangular."""
         await asyncio.sleep(5)  # Let prices warm up
         while self._running:
@@ -589,6 +627,9 @@ class TradingEngine:
                 await asyncio.sleep(1.0)
 
     async def _capital_monitor_loop(self) -> None:
+        await self.market_loop.capital_monitor_loop()
+
+    async def _capital_monitor_loop_impl(self) -> None:
         """Aave health factor monitoring — every 30 seconds."""
         while self._running:
             try:
@@ -617,6 +658,9 @@ class TradingEngine:
                 await asyncio.sleep(10)
 
     async def _profit_collect_loop(self) -> None:
+        await self.execution_loop.profit_collect_loop()
+
+    async def _profit_collect_loop_impl(self) -> None:
         """Rescue accumulated profits from executor contract — every 5 min."""
         await asyncio.sleep(60)  # Initial delay
         while self._running:
@@ -659,6 +703,9 @@ class TradingEngine:
     # ═══════════════════════════════════════════════════════════════════════
 
     async def _mev_loop(self) -> None:
+        await self.strategy_loop.mev_loop()
+
+    async def _mev_loop_impl(self) -> None:
         """MEV backrunning — mempool monitoring."""
         if not self.mev_strategy:
             return
@@ -671,6 +718,9 @@ class TradingEngine:
             log.error("mev.error", error=str(e)[:80])
 
     async def _gmx_loop(self) -> None:
+        await self.strategy_loop.gmx_loop()
+
+    async def _gmx_loop_impl(self) -> None:
         """GMX funding rate harvest — scan every 5 minutes."""
         if not self.gmx_strategy:
             return
@@ -699,6 +749,9 @@ class TradingEngine:
                 await asyncio.sleep(60)
 
     async def _xchain_loop(self) -> None:
+        await self.strategy_loop.xchain_loop()
+
+    async def _xchain_loop_impl(self) -> None:
         """Cross-chain arbitrage — scan every 2 minutes."""
         if not self.xchain_strategy:
             return
@@ -730,6 +783,9 @@ class TradingEngine:
                 await asyncio.sleep(60)
 
     async def _yield_loop(self) -> None:
+        await self.strategy_loop.yield_loop()
+
+    async def _yield_loop_impl(self) -> None:
         """Yield optimizer — check every hour."""
         if not self.yield_strategy:
             return
@@ -762,6 +818,9 @@ class TradingEngine:
     # ═══════════════════════════════════════════════════════════════════════
 
     async def _scaling_loop(self) -> None:
+        await self.execution_loop.scaling_loop()
+
+    async def _scaling_loop_impl(self) -> None:
         """Auto-scaling FSM — check every 5 minutes."""
         while self._running:
             try:
@@ -769,8 +828,11 @@ class TradingEngine:
                 await self._check_scaling()
             except asyncio.CancelledError:
                 break
-            except Exception:
-                pass
+            except Exception as exc:
+                wrapped = ScalingEvaluationError(str(exc))
+                self.error_telemetry.record("scaling_loop", wrapped)
+                log.error("scaling.loop_error", error=str(exc)[:80])
+                await asyncio.sleep(5)
 
     async def _check_scaling(self) -> None:
         """Evaluate scaling FSM and auto-upgrade."""
@@ -788,10 +850,15 @@ class TradingEngine:
                     "arb1.arbitrum.io/rpc", 50
                 ),
             ))
-        except Exception:
-            pass
+        except Exception as exc:
+            wrapped = ScalingEvaluationError(str(exc))
+            self.error_telemetry.record("scaling_eval", wrapped)
+            log.error("scaling.eval_error", error=str(exc)[:80])
 
     async def _hud_state_loop(self) -> None:
+        await self.reporting_loop.hud_state_loop()
+
+    async def _hud_state_loop_impl(self) -> None:
         """Push state to PartyKit for dashboard — every 2 seconds."""
         pk_interval = 0
         while self._running:
@@ -807,10 +874,15 @@ class TradingEngine:
 
             except asyncio.CancelledError:
                 break
-            except Exception:
-                pass
+            except Exception as exc:
+                wrapped = HudSyncError(str(exc))
+                self.error_telemetry.record("hud_state", wrapped)
+                log.error("hud_state.error", error=str(exc)[:80])
 
     async def _nonce_resync_loop(self) -> None:
+        await self.execution_loop.nonce_resync_loop()
+
+    async def _nonce_resync_loop_impl(self) -> None:
         """Resync nonce from chain every 60 seconds to detect gaps."""
         while self._running:
             try:
@@ -818,10 +890,15 @@ class TradingEngine:
                 await self.nonce_mgr.resync_if_needed()
             except asyncio.CancelledError:
                 break
-            except Exception:
-                pass
+            except Exception as exc:
+                wrapped = NonceResyncError(str(exc))
+                self.error_telemetry.record("nonce_resync", wrapped)
+                log.error("nonce_resync.error", error=str(exc)[:80])
 
     async def _health_server(self) -> None:
+        await self.reporting_loop.health_server()
+
+    async def _health_server_impl(self) -> None:
         """HTTP health endpoint on port 8080."""
         from aiohttp import web
 
@@ -843,6 +920,7 @@ class TradingEngine:
                 "circuit": "open" if (self.risk_mgr and self.risk_mgr.state.paused) else "closed",
                 "strategies": list(self._enabled),
                 "chains": shared_state.chain,
+                "error_telemetry": self.error_telemetry.snapshot(),
             }, status=200 if ok else 503)
 
         app = web.Application()
@@ -866,8 +944,10 @@ class TradingEngine:
             await asyncio.sleep(15)
             try:
                 shared_state.block_number = await self.w3.eth.block_number
-            except Exception:
-                pass
+            except Exception as exc:
+                wrapped = HealthUpdateError(str(exc))
+                self.error_telemetry.record("health_server", wrapped)
+                log.warning("health_server.block_update_error", error=str(exc)[:80])
 
     # ═══════════════════════════════════════════════════════════════════════
     # HUD STATE SYNC
