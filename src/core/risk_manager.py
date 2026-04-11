@@ -19,6 +19,7 @@ Chain: Arbitrum | Gas: ~0.001 gwei (view calls only) | Latency: <5ms
 """
 
 import asyncio
+import json
 import logging
 import time
 from dataclasses import dataclass, field
@@ -51,6 +52,8 @@ ANOMALOUS_PRICE_CHANGE_PCT = 0.10   # 10% sudden move = halt
 MAX_KELLY_FRACTION = 0.25           # Hard cap on position size
 PROFIT_COLLECT_THRESHOLD_USD = 5.0  # Min profit to collect
 PROFIT_COLLECT_MIN_INTERVAL = 300   # 5 minutes between collections
+TELEMETRY_DEGRADED_TIMEOUT = 120    # Seconds to stay in degraded mode
+TELEMETRY_MAX_RETRIES = 5           # Escalate after repeated telemetry uncertainty
 
 
 @dataclass
@@ -77,6 +80,11 @@ class RiskState:
     pause_reason: str = ""
     total_profit_usd: float = 0.0
     last_prices: dict = field(default_factory=dict)
+    degraded: bool = False
+    degraded_reason: str = ""
+    degraded_until_ts: float = 0.0
+    telemetry_retry_count: int = 0
+    telemetry_last_error_ts: float = 0.0
 
 
 class RiskManager:
@@ -126,6 +134,7 @@ class RiskManager:
         async with self._lock:
             # Reset daily state if new day
             self._maybe_reset_daily()
+            self._refresh_degraded_mode()
 
             # 1. Circuit breaker check
             if self.state.paused:
@@ -133,6 +142,24 @@ class RiskManager:
                     allowed=False,
                     reason=f"PAUSED: {self.state.pause_reason}",
                 )
+
+            # 1b. Degraded mode allows minimal-risk operations only.
+            if self.state.degraded and flash_amount_usd > 0:
+                reason = (
+                    f"DEGRADED: telemetry uncertainty "
+                    f"(retry={self.state.telemetry_retry_count}) blocks leverage"
+                )
+                self._emit_risk_event(
+                    "trade_blocked",
+                    strategy=strategy,
+                    token=token,
+                    reason=reason,
+                    expected_profit=round(expected_profit, 6),
+                    flash_amount_usd=round(flash_amount_usd, 6),
+                    retry_count=self.state.telemetry_retry_count,
+                    degraded_until_ts=round(self.state.degraded_until_ts, 3),
+                )
+                return ClearanceResult(allowed=False, reason=reason)
 
             # 2. Consecutive failure check
             if self.state.consecutive_failures >= MAX_CONSECUTIVE_FAILURES:
@@ -155,14 +182,36 @@ class RiskManager:
             try:
                 aave_state = await self.aave_client.get_account_state()
                 hf = aave_state.health_factor
+                if self.state.degraded:
+                    self._clear_degraded_mode("telemetry_recovered")
                 if hf < MIN_HEALTH_FACTOR and aave_state.debt_usd > 0:
                     return ClearanceResult(
                         allowed=False,
                         reason=f"Health factor too low: {hf:.3f} < {MIN_HEALTH_FACTOR}",
                     )
             except Exception as e:
-                logger.warning("risk.hf_check_failed: %s", str(e)[:60])
-                # Allow trade if HF check fails (don't block on RPC issue)
+                self._enter_degraded_mode(
+                    reason="hf_telemetry_uncertainty",
+                    error=e,
+                    strategy=strategy,
+                    token=token,
+                    expected_profit=expected_profit,
+                    flash_amount_usd=flash_amount_usd,
+                )
+                if flash_amount_usd > 0:
+                    reason = (
+                        "Blocked: HF telemetry uncertainty while leverage requested"
+                    )
+                    self._emit_risk_event(
+                        "trade_blocked",
+                        strategy=strategy,
+                        token=token,
+                        reason=reason,
+                        expected_profit=round(expected_profit, 6),
+                        flash_amount_usd=round(flash_amount_usd, 6),
+                        retry_count=self.state.telemetry_retry_count,
+                    )
+                    return ClearanceResult(allowed=False, reason=reason)
                 hf = 99.0
 
             # 5. Gas price check
@@ -372,6 +421,57 @@ class RiskManager:
         self.state.pause_reason = reason
         logger.warning("risk.PAUSED reason=%s", reason)
 
+    def _emit_risk_event(self, event_type: str, **payload: Any) -> None:
+        event = {
+            "ts": round(time.time(), 3),
+            "event_type": event_type,
+            "component": "risk_manager",
+            **payload,
+        }
+        logger.warning("risk.event %s", json.dumps(event, sort_keys=True))
+
+    def _enter_degraded_mode(
+        self,
+        reason: str,
+        error: Exception,
+        strategy: str,
+        token: str,
+        expected_profit: float,
+        flash_amount_usd: float,
+    ) -> None:
+        now = time.time()
+        self.state.degraded = True
+        self.state.degraded_reason = reason
+        self.state.degraded_until_ts = now + TELEMETRY_DEGRADED_TIMEOUT
+        self.state.telemetry_retry_count += 1
+        self.state.telemetry_last_error_ts = now
+        self._emit_risk_event(
+            "telemetry_uncertain",
+            reason=reason,
+            error=str(error)[:120],
+            strategy=strategy,
+            token=token,
+            expected_profit=round(expected_profit, 6),
+            flash_amount_usd=round(flash_amount_usd, 6),
+            retry_count=self.state.telemetry_retry_count,
+            degraded_until_ts=round(self.state.degraded_until_ts, 3),
+        )
+        if self.state.telemetry_retry_count >= TELEMETRY_MAX_RETRIES:
+            self._pause(f"telemetry_uncertain_retries={self.state.telemetry_retry_count}")
+
+    def _clear_degraded_mode(self, recovered_by: str) -> None:
+        self.state.degraded = False
+        self.state.degraded_reason = ""
+        self.state.degraded_until_ts = 0.0
+        self.state.telemetry_retry_count = 0
+        self._emit_risk_event("telemetry_recovered", recovered_by=recovered_by)
+
+    def _refresh_degraded_mode(self) -> None:
+        if not self.state.degraded:
+            return
+        if time.time() > self.state.degraded_until_ts:
+            self._clear_degraded_mode("timeout_expired")
+
     def _maybe_reset_daily(self) -> None:
         """Reset daily counters at midnight UTC."""
         now = time.time()
@@ -397,4 +497,8 @@ class RiskManager:
             "daily_trades": self.state.daily_trades,
             "consecutive_failures": self.state.consecutive_failures,
             "total_profit": round(self.state.total_profit_usd, 4),
+            "degraded": self.state.degraded,
+            "degraded_reason": self.state.degraded_reason,
+            "telemetry_retry_count": self.state.telemetry_retry_count,
+            "degraded_until_ts": round(self.state.degraded_until_ts, 3),
         }

@@ -115,6 +115,41 @@ class TestRiskManager:
         assert result.allowed is False
         assert "Profit" in result.reason
 
+    @pytest.mark.asyncio
+    async def test_hf_telemetry_uncertainty_blocks_leveraged_trade(
+        self, mock_w3, mock_account, mock_nonce_mgr, mock_aave_client
+    ):
+        rm = self._make_rm(mock_w3, mock_account, mock_nonce_mgr, mock_aave_client)
+        mock_aave_client.get_account_state = AsyncMock(side_effect=RuntimeError("rpc timeout"))
+
+        result = await rm.clear_trade(
+            strategy="arb", expected_profit=5.0, flash_amount_usd=5000
+        )
+
+        assert result.allowed is False
+        assert "telemetry uncertainty" in result.reason.lower()
+        assert rm.state.degraded is True
+        assert rm.state.telemetry_retry_count == 1
+
+    @pytest.mark.asyncio
+    async def test_degraded_mode_allows_minimal_risk_trade(
+        self, mock_w3, mock_account, mock_nonce_mgr, mock_aave_client
+    ):
+        rm = self._make_rm(mock_w3, mock_account, mock_nonce_mgr, mock_aave_client)
+        mock_aave_client.get_account_state = AsyncMock(side_effect=RuntimeError("rpc timeout"))
+
+        first = await rm.clear_trade(
+            strategy="arb", expected_profit=5.0, flash_amount_usd=0
+        )
+        assert first.allowed is True
+        assert rm.state.degraded is True
+
+        blocked = await rm.clear_trade(
+            strategy="arb", expected_profit=5.0, flash_amount_usd=1000
+        )
+        assert blocked.allowed is False
+        assert "blocks leverage" in blocked.reason.lower()
+
     def test_record_trade_updates_state(self, mock_w3, mock_account, mock_nonce_mgr, mock_aave_client):
         rm = self._make_rm(mock_w3, mock_account, mock_nonce_mgr, mock_aave_client)
 
