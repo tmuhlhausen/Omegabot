@@ -306,6 +306,7 @@ class TradingEngine:
         self.liq_scanner = LiquidationScanner(
             w3=self.w3, executor=self.liq_executor,
             graph_api_key=os.environ.get("THE_GRAPH_API_KEY", ""),
+            http_session=self._http_session,
         )
         self.arb_strategy = FlashArbStrategy(
             w3=self.w3, account=self.account,

@@ -20,10 +20,11 @@ Chain: Arbitrum | Gas: 0 (view calls) | Latency: <500ms per batch
 """
 
 import asyncio
+import heapq
 import logging
 import time
 from dataclasses import dataclass, field
-from typing import Optional, List, Dict, Set
+from typing import Optional, List, Dict, Set, Tuple
 
 import aiohttp
 from web3 import AsyncWeb3
@@ -68,6 +69,10 @@ HF_RISKY = 1.05
 HF_LIQUIDATABLE = 1.00
 GRAPH_FETCH_INTERVAL = 300   # 5 minutes
 PRE_STAGE_EXPIRY_S = 30
+STALE_BORROWER_TTL_S = 20 * 60
+MAX_TRACKED_BORROWERS = 20_000
+EVENT_POLL_INTERVAL_S = 12
+MISSED_LIQ_CHECK_GRACE_MULTIPLIER = 4
 
 
 @dataclass
@@ -107,6 +112,7 @@ class LiquidationScanner:
         w3: AsyncWeb3,
         executor,
         graph_api_key: str = "",
+        http_session: Optional[aiohttp.ClientSession] = None,
     ):
         self.w3 = w3
         self.executor = executor
@@ -122,6 +128,10 @@ class LiquidationScanner:
         self._pre_staged: Dict[str, PreStagedTx] = {}
         self._running = False
         self._scan_interval = SCAN_INTERVAL_DEFAULT
+        self._http_session = http_session
+        self._owns_http_session = http_session is None
+        self._borrower_heap: List[Tuple[float, str]] = []
+        self._last_event_block = 0
 
         # Stats
         self._graph_fetches = 0
@@ -129,10 +139,17 @@ class LiquidationScanner:
         self._executions = 0
         self._total_profit = 0.0
         self._scans = 0
+        self._addresses_scanned = 0
+        self._scan_started_at = 0.0
+        self._stale_evictions = 0
+        self._event_subscription_active = False
 
     async def start(self) -> None:
         """Start the dual-source scanning loop."""
+        if self._http_session is None:
+            self._http_session = aiohttp.ClientSession()
         self._running = True
+        self._scan_started_at = time.time()
         logger.info("liq_scanner.starting")
 
         # Run Graph fetcher and live scanner concurrently
@@ -146,6 +163,8 @@ class LiquidationScanner:
     async def stop(self) -> None:
         """Stop scanning gracefully."""
         self._running = False
+        if self._owns_http_session and self._http_session and not self._http_session.closed:
+            await self._http_session.close()
         logger.info("liq_scanner.stopped", borrowers=len(self._borrowers))
 
     def set_scan_interval(self, seconds: float) -> None:
@@ -174,34 +193,36 @@ class LiquidationScanner:
         skip = 0
         batch_size = 1000
 
-        async with aiohttp.ClientSession() as session:
-            while True:
-                try:
-                    async with session.post(
-                        url,
-                        json={
-                            "query": GRAPHQL_QUERY,
-                            "variables": {"skip": skip, "first": batch_size},
-                        },
-                        timeout=aiohttp.ClientTimeout(total=15),
-                    ) as resp:
-                        data = await resp.json()
-                        users = data.get("data", {}).get("users", [])
+        if self._http_session is None:
+            return
 
-                        if not users:
-                            break
+        while True:
+            try:
+                async with self._http_session.post(
+                    url,
+                    json={
+                        "query": GRAPHQL_QUERY,
+                        "variables": {"skip": skip, "first": batch_size},
+                    },
+                    timeout=aiohttp.ClientTimeout(total=15),
+                ) as resp:
+                    data = await resp.json()
+                    users = data.get("data", {}).get("users", [])
 
-                        for u in users:
-                            all_borrowers.add(u["id"])
+                    if not users:
+                        break
 
-                        skip += batch_size
+                    for u in users:
+                        all_borrowers.add(u["id"])
 
-                        if len(users) < batch_size:
-                            break
+                    skip += batch_size
 
-                except Exception as e:
-                    logger.warning("graph.query_error: %s", str(e)[:60])
-                    break
+                    if len(users) < batch_size:
+                        break
+
+            except Exception as e:
+                logger.warning("graph.query_error: %s", str(e)[:60])
+                break
 
         # Add new borrowers to tracking
         for addr in all_borrowers:
@@ -210,6 +231,9 @@ class LiquidationScanner:
                     address=addr, health_factor=99.0,
                     collateral_usd=0, debt_usd=0,
                 )
+                self._push_borrower_priority(addr)
+
+        self._evict_stale_borrowers(force_size_bound=True)
 
         self._graph_fetches += 1
         logger.info("graph.fetched", total=len(all_borrowers), tracked=len(self._borrowers))
@@ -218,12 +242,16 @@ class LiquidationScanner:
 
     async def _event_listener(self) -> None:
         """Listen for Borrow/Repay events to discover new borrowers in real-time."""
+        self._event_subscription_active = await self._event_listener_ws()
+        if self._event_subscription_active:
+            return
+
         while self._running:
             try:
                 latest = await self.w3.eth.block_number
                 # Check last 100 blocks for new borrowers
                 # In production: use eth_subscribe for real-time
-                from_block = max(0, latest - 100)
+                from_block = max(self._last_event_block + 1, latest - 100)
 
                 # Borrow event topic (Aave V3)
                 borrow_topic = "0xb3d084820fb1a9decffb176436bd02558d15fac9b0ddfed8c465bc7359d7dce0"
@@ -245,14 +273,57 @@ class LiquidationScanner:
                                 address=borrower, health_factor=99.0,
                                 collateral_usd=0, debt_usd=0,
                             )
+                            self._push_borrower_priority(borrower)
+                self._last_event_block = latest
+                self._evict_stale_borrowers(force_size_bound=True)
 
-                await asyncio.sleep(12)  # ~1 Arbitrum block
+                await asyncio.sleep(EVENT_POLL_INTERVAL_S)  # ~1 Arbitrum block
 
             except asyncio.CancelledError:
                 break
             except Exception as e:
                 logger.warning("event_listener.error: %s", str(e)[:60])
                 await asyncio.sleep(30)
+
+    async def _event_listener_ws(self) -> bool:
+        """Try websocket-style eth_subscribe, fallback to polling when unavailable."""
+        try:
+            subscribe = getattr(self.w3.eth, "subscribe", None)
+            if subscribe is None:
+                return False
+
+            borrow_topic = "0xb3d084820fb1a9decffb176436bd02558d15fac9b0ddfed8c465bc7359d7dce0"
+            sub_id = await subscribe("logs", {
+                "address": AAVE_V3_POOL,
+                "topics": [borrow_topic],
+            })
+            if not sub_id:
+                return False
+
+            logger.info("event_listener.subscription_active", sub_id=sub_id[:10])
+            while self._running:
+                logs = await self.w3.eth.get_filter_changes(sub_id)
+                for log_entry in logs:
+                    self._events_seen += 1
+                    topics = log_entry.get("topics", []) if isinstance(log_entry, dict) else []
+                    if len(topics) > 2:
+                        topic_hex = topics[2].hex() if hasattr(topics[2], "hex") else str(topics[2])
+                        borrower = "0x" + topic_hex[-40:]
+                        if borrower not in self._borrowers:
+                            self._borrowers[borrower] = BorrowerState(
+                                address=borrower,
+                                health_factor=99.0,
+                                collateral_usd=0,
+                                debt_usd=0,
+                            )
+                            self._push_borrower_priority(borrower)
+                self._evict_stale_borrowers(force_size_bound=True)
+                await asyncio.sleep(1.0)
+
+            return True
+        except Exception as e:
+            logger.info("event_listener.subscription_unavailable", reason=str(e)[:60])
+            return False
 
     # ── Main Scan Loop ────────────────────────────────────────────────────
 
@@ -263,17 +334,12 @@ class LiquidationScanner:
         """
         while self._running:
             try:
-                addresses = sorted(
-                    self._borrowers.keys(),
-                    key=lambda a: self._borrowers[a].health_factor,
-                )
+                self._evict_stale_borrowers(force_size_bound=True)
 
-                # Scan in batches of BATCH_SIZE
-                for i in range(0, len(addresses), BATCH_SIZE):
-                    if not self._running:
+                while self._running:
+                    batch = self._next_batch(BATCH_SIZE)
+                    if not batch:
                         break
-
-                    batch = addresses[i:i + BATCH_SIZE]
                     await self._scan_batch(batch)
                     self._scans += 1
 
@@ -311,6 +377,8 @@ class LiquidationScanner:
                 collateral_usd=col_usd,
                 debt_usd=debt_usd,
             )
+            self._addresses_scanned += 1
+            self._push_borrower_priority(address)
 
             # Pre-stage for risky positions
             if hf < HF_RISKY and debt_usd > 10:
@@ -344,8 +412,66 @@ class LiquidationScanner:
         except Exception:
             pass  # Individual borrower check failure is non-fatal
 
+    def _borrower_priority_score(self, state: BorrowerState) -> float:
+        age = max(0.0, time.time() - state.last_checked)
+        freshness = min(age / max(self._scan_interval, 0.1), 50.0)
+        urgency = max(0.0, HF_RISKY - state.health_factor) * 100.0
+        debt_bonus = min(state.debt_usd / 10_000.0, 10.0)
+        return urgency + freshness + debt_bonus
+
+    def _push_borrower_priority(self, address: str) -> None:
+        state = self._borrowers.get(address)
+        if not state:
+            return
+        score = self._borrower_priority_score(state)
+        heapq.heappush(self._borrower_heap, (-score, address))
+
+    def _next_batch(self, size: int) -> List[str]:
+        batch: List[str] = []
+        seen: Set[str] = set()
+        while self._borrower_heap and len(batch) < size:
+            _, addr = heapq.heappop(self._borrower_heap)
+            state = self._borrowers.get(addr)
+            if state is None or addr in seen:
+                continue
+            seen.add(addr)
+            batch.append(addr)
+        return batch
+
+    def _evict_stale_borrowers(self, force_size_bound: bool = False) -> None:
+        now = time.time()
+        stale_addrs = [
+            addr for addr, state in self._borrowers.items()
+            if now - state.last_checked > STALE_BORROWER_TTL_S
+        ]
+        for addr in stale_addrs:
+            self._borrowers.pop(addr, None)
+            self._risky.pop(addr, None)
+            self._pre_staged.pop(addr, None)
+            self._stale_evictions += 1
+
+        if force_size_bound and len(self._borrowers) > MAX_TRACKED_BORROWERS:
+            overflow = len(self._borrowers) - MAX_TRACKED_BORROWERS
+            coldest = sorted(
+                self._borrowers.values(),
+                key=lambda s: (s.last_checked, s.health_factor),
+            )[:overflow]
+            for state in coldest:
+                self._borrowers.pop(state.address, None)
+                self._risky.pop(state.address, None)
+                self._pre_staged.pop(state.address, None)
+                self._stale_evictions += 1
+
     @property
     def stats(self) -> dict:
+        now = time.time()
+        runtime = max(now - self._scan_started_at, 1.0)
+        stale_count = sum(
+            1 for s in self._borrowers.values()
+            if now - s.last_checked > (self._scan_interval * MISSED_LIQ_CHECK_GRACE_MULTIPLIER)
+        )
+        stale_ratio = stale_count / max(len(self._borrowers), 1)
+        missed_liq_estimate = int(len(self._risky) * stale_ratio)
         return {
             "total_tracked": len(self._borrowers),
             "risky_hf_lt_1_2": len(self._risky),
@@ -356,4 +482,9 @@ class LiquidationScanner:
             "scan_interval_s": self._scan_interval,
             "pre_staged": len([p for p in self._pre_staged.values() if not p.is_expired]),
             "scans": self._scans,
+            "addresses_per_sec": round(self._addresses_scanned / runtime, 2),
+            "stale_ratio": round(stale_ratio, 4),
+            "missed_liquidation_estimate": missed_liq_estimate,
+            "stale_evictions": self._stale_evictions,
+            "event_subscription_active": self._event_subscription_active,
         }
