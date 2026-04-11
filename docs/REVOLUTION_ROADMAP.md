@@ -89,3 +89,9 @@ Each roadmap category below references implementation matrix IDs.
 
 ## Non-Destructive Principle
 Additive-first architecture: introduce new modules behind feature flags and compatibility adapters; remove legacy behavior only after validated replacement and observability confidence.
+
+## Import Modernization Milestone Track
+- **Canonical namespace:** `src.strategies` (effective 2026-04-11).
+- **Deprecation-only shim:** `strategies/` root package remains temporary compatibility bridge.
+- **CI enforcement date:** 2026-05-15 (fail builds on new deprecated shim imports).
+- **Cleanup milestone:** 2026-06-30 (remove shim + publish migration completion note).

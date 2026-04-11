@@ -15,7 +15,7 @@ test -f pytest.ini
 echo "[4/6] Running dependency health check..."
 python -m pip check > /dev/null
 
-echo "[5/6] Enforcing implementation matrix release-critical rules..."
-python scripts/check_implementation_matrix.py
+echo "[5/6] Enforcing deprecated import policy..."
+python scripts/check_deprecated_imports.py
 
 echo "[6/6] Release gate complete ✅"
