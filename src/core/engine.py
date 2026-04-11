@@ -10,7 +10,7 @@ KEY FIXES FROM AUDIT:
   ✅ FIX: PartyKitClient wired with push_state + push_trade
   ✅ FIX: PlatformReporter wired with init_reporter factory
   ✅ FIX: VaultClient wired with deposit_profit
-  ✅ FIX: All 4 advanced strategies imported from strategies/advanced_strategies.py
+  ✅ FIX: All 4 advanced strategies imported from src.strategies.import_map
   ✅ FIX: _report_profit() central pipeline used by all strategy loops
   ✅ FIX: RiskManager gates EVERY trade via clear_trade()
   ✅ FIX: NonceManager synced from chain before any tx
@@ -88,7 +88,7 @@ from ..monitoring.platform_reporter import init_reporter, TradeResult
 
 # ── Advanced strategies (graceful import — won't crash if missing) ────────────
 try:
-    from ..strategies.advanced_strategies import (
+    from ..strategies.import_map import (
         MEVStrategy, GMXFundingStrategy, CrossChainArbStrategy, YieldOptimizer,
     )
     _ADVANCED_AVAILABLE = True

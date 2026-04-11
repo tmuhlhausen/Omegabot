@@ -30,3 +30,14 @@
 - Prefer additive changes.
 - Keep legacy entry points as aliases for at least one release cycle.
 - Remove only when telemetry confirms no active usage.
+
+## Strategy Import Deprecation Timeline
+- **2026-04-11 (now):** `src/strategies/` is canonical. Root `strategies/` is shim-only and emits deprecation warnings.
+- **2026-05-15:** CI blocks any new imports from `strategies.*` in `src/` and `tests/`.
+- **2026-06-30:** Remove root `strategies/` shim package after one release cycle and migration verification.
+
+## Cleanup Milestone
+- **Milestone: 2026-06-30**
+  - Delete `strategies/` shim modules.
+  - Drop deprecated import checks once shim is removed and all callers are migrated.
+  - Record migration completion in release notes.
