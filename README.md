@@ -90,15 +90,28 @@ npx hardhat run scripts/deploy.js --network arbitrum
 # Save output addresses to .env
 ```
 
-### Step 2: Deploy Bot to Railway/Fly.io (free)
+### Step 2: Initialize DB schema with migrations (required)
+
+```bash
+# Dev bootstrap only
+./scripts/dev_db_init.sh
+
+# Production/CI deploys (pin exact migration head)
+alembic upgrade 20260411_0001
+```
+
+Migration head pinned for deployment automation: `20260411_0001`.
+
+### Step 3: Deploy Bot to Railway/Fly.io (free)
 
 ```bash
 # Push to GitHub, connect to Railway
 # Set env vars from .env.example
+# Run: alembic upgrade 20260411_0001
 # Railway auto-deploys from Dockerfile
 ```
 
-### Step 3: Deploy Dashboard to Vercel (free)
+### Step 4: Deploy Dashboard to Vercel (free)
 
 ```bash
 cd dashboard
