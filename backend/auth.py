@@ -60,6 +60,7 @@ from sqlalchemy import (
     Integer, String, Text, create_engine, func,
 )
 from sqlalchemy.orm import DeclarativeBase, Session, relationship, sessionmaker
+from backend.startup_config import validate_startup_config
 
 try:
     from jose import jwt, JWTError
@@ -79,16 +80,27 @@ logger = logging.getLogger(__name__)
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./neuralbot_omega.db")
 ENV = os.getenv("ENV", "dev").lower()
 JWT_SECRET_ENV = os.getenv("JWT_SECRET", "").strip()
-if ENV in {"prod", "production", "staging"} and not JWT_SECRET_ENV:
-    raise RuntimeError("JWT_SECRET must be set in production/staging environments")
+STRIPE_SECRET_KEY_ENV = os.getenv("STRIPE_SECRET_KEY", "").strip()
+STRIPE_WEBHOOK_SECRET_ENV = os.getenv("STRIPE_WEBHOOK_SECRET", "").strip()
+ALLOW_INSECURE_DEV_BILLING = os.getenv("ALLOW_INSECURE_DEV_BILLING", "").strip() == "1"
+
+
+validate_startup_config(
+    env=ENV,
+    jwt_secret=JWT_SECRET_ENV,
+    stripe_secret_key=STRIPE_SECRET_KEY_ENV,
+    stripe_webhook_secret=STRIPE_WEBHOOK_SECRET_ENV,
+    allow_insecure_dev_billing=ALLOW_INSECURE_DEV_BILLING,
+)
+
 if not JWT_SECRET_ENV and ENV == "dev":
     logger.warning("JWT_SECRET missing in dev; using ephemeral secret")
 SECRET_KEY = JWT_SECRET_ENV or secrets.token_hex(32)
 ALGORITHM = "HS256"
 ACCESS_EXPIRE_MIN = 60
 REFRESH_EXPIRE_DAYS = 30
-STRIPE_SECRET_KEY = os.getenv("STRIPE_SECRET_KEY", "sk_test_placeholder")
-STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET", "whsec_placeholder")
+STRIPE_SECRET_KEY = STRIPE_SECRET_KEY_ENV or "sk_test_placeholder"
+STRIPE_WEBHOOK_SECRET = STRIPE_WEBHOOK_SECRET_ENV or "whsec_placeholder"
 PLATFORM_WALLET = os.getenv("PLATFORM_WALLET", "0x" + "0" * 40)
 FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:3000")
 
