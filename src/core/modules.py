@@ -6,8 +6,13 @@ import asyncio
 import logging
 import time
 from dataclasses import dataclass, field
-from web3 import AsyncWeb3
-from web3.providers import AsyncHTTPProvider
+
+try:
+    from web3 import AsyncWeb3
+    from web3.providers import AsyncHTTPProvider
+except ImportError:  # pragma: no cover - test/runtime fallback
+    AsyncWeb3 = None  # type: ignore[assignment]
+    AsyncHTTPProvider = None  # type: ignore[assignment]
 
 logger = logging.getLogger(__name__)
 
@@ -207,3 +212,74 @@ class ScalingFSM:
             logger.info("SCALING_AAVE: borrow $%.0f→$%.0f", state.current_borrow_usd, new_borrow)
         else:
             logger.warning("SCALING_AAVE_SKIP: projected HF=%.2f", projected)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Blast-radius controls (IM-014, IM-040)
+# ─────────────────────────────────────────────────────────────────────────────
+
+@dataclass
+class VenueQuota:
+    """Per-venue isolation budget tracked by ``BlastRadiusController``."""
+
+    name: str
+    max_loss_usd: float
+    max_failures: int
+    cur_loss_usd: float = 0.0
+    cur_failures: int = 0
+    quarantined: bool = False
+
+
+class BlastRadiusController:
+    """Per-venue failure-domain isolation.
+
+    Each venue has an independent loss + failure budget. When a budget is
+    exceeded the venue is quarantined without affecting other venues. The
+    engine consults ``is_allowed`` before routing capital and ``record_*``
+    after each attempt.
+    """
+
+    def __init__(self) -> None:
+        self._venues: dict[str, VenueQuota] = {}
+
+    def register(
+        self, name: str, *, max_loss_usd: float = 25.0, max_failures: int = 5
+    ) -> VenueQuota:
+        quota = VenueQuota(name=name, max_loss_usd=max_loss_usd, max_failures=max_failures)
+        self._venues[name] = quota
+        return quota
+
+    def is_allowed(self, name: str) -> bool:
+        quota = self._venues.get(name)
+        if quota is None:
+            return True
+        return not quota.quarantined
+
+    def record_failure(self, name: str, loss_usd: float = 0.0) -> VenueQuota | None:
+        quota = self._venues.get(name)
+        if quota is None:
+            return None
+        quota.cur_failures += 1
+        quota.cur_loss_usd += max(0.0, loss_usd)
+        if (
+            quota.cur_failures >= quota.max_failures
+            or quota.cur_loss_usd >= quota.max_loss_usd
+        ):
+            quota.quarantined = True
+            logger.warning("BLAST_RADIUS_QUARANTINE: %s", name)
+        return quota
+
+    def record_success(self, name: str) -> None:
+        quota = self._venues.get(name)
+        if quota is not None:
+            quota.cur_failures = max(0, quota.cur_failures - 1)
+
+    def reset(self, name: str) -> None:
+        quota = self._venues.get(name)
+        if quota is not None:
+            quota.cur_failures = 0
+            quota.cur_loss_usd = 0.0
+            quota.quarantined = False
+
+    def quarantined(self) -> list[str]:
+        return [v.name for v in self._venues.values() if v.quarantined]

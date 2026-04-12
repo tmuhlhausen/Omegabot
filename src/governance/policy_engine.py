@@ -31,6 +31,65 @@ class PolicyConfig:
     workflows: tuple[ApprovalWorkflow, ...] = ()
 
 
+@dataclass
+class StopPolicySnapshot:
+    """Adaptive stop-loss/take-profit policy resolved per call."""
+
+    stop_loss_pct: float
+    take_profit_pct: float
+    rationale: str
+
+
+class StopPolicyController:
+    """Self-adjusting stop policy.
+
+    Tightens stops as drawdown grows or volatility spikes; widens stops in
+    benign markets so winners can run. Output is deterministic given the input
+    so it is safe for use in trade clearance loops.
+    """
+
+    def __init__(
+        self,
+        *,
+        base_stop_pct: float = 0.04,
+        base_take_profit_pct: float = 0.10,
+        min_stop_pct: float = 0.01,
+        max_stop_pct: float = 0.08,
+    ) -> None:
+        self.base_stop_pct = base_stop_pct
+        self.base_take_profit_pct = base_take_profit_pct
+        self.min_stop_pct = min_stop_pct
+        self.max_stop_pct = max_stop_pct
+
+    def resolve(
+        self,
+        *,
+        drawdown_pct: float,
+        volatility: float,
+        risk_mode: str,
+    ) -> StopPolicySnapshot:
+        mode = risk_mode.upper()
+        # tighten as drawdown deepens (per 1% drawdown shave 5% off stop)
+        dd_factor = max(0.5, 1.0 - max(drawdown_pct, 0.0) * 0.05)
+        # tighter stop in higher vol
+        vol_factor = max(0.5, 1.0 - max(volatility - 0.5, 0.0))
+        crisis_factor = 0.6 if mode == "CRISIS" else (0.85 if mode == "DEFENSIVE" else 1.0)
+
+        stop = self.base_stop_pct * dd_factor * vol_factor * crisis_factor
+        stop = min(self.max_stop_pct, max(self.min_stop_pct, stop))
+        take_profit = max(stop * 1.5, self.base_take_profit_pct * crisis_factor)
+
+        rationale = (
+            f"mode={mode} dd={drawdown_pct:.2f} vol={volatility:.2f} "
+            f"factors(dd={dd_factor:.2f},vol={vol_factor:.2f},crisis={crisis_factor:.2f})"
+        )
+        return StopPolicySnapshot(
+            stop_loss_pct=round(stop, 4),
+            take_profit_pct=round(take_profit, 4),
+            rationale=rationale,
+        )
+
+
 class PolicyEngine:
     """Policy-as-code gate with tier thresholds and approval workflow routing.
 

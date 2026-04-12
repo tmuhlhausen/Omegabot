@@ -1,5 +1,8 @@
 # NeuralBot OMEGA — The Unified Final Build
 
+**Release:** `1.0.0` — Final Build & Release (2026-04-12)
+See [`CHANGELOG.md`](CHANGELOG.md) for the full release notes.
+
 **Total startup cost: ~$3** (Arbitrum gas for contract deployment)
 **Monthly hosting: $0** (free tier bootstrap)
 **Capital required: $0** (Aave flash loans)
@@ -167,16 +170,24 @@ slippage enforcement, circuit breakers, non-root Docker, env-only keys.
 
 | Capability | Status | Notes |
 |---|---|---|
-| Engine import closure | Partial | Missing modules have now been scaffolded and integrated. |
+| Engine import closure | Implemented | Optional `web3`/`eth_account`/`eth_abi` imports gated by fallback shims so tests run without the on-chain stack. |
 | Reporting pipeline retry+batch | Implemented | Queue worker + batch flush + bounded retry added. |
 | PartyKit trade API naming | Implemented | Canonical `push_trade()` with `send_trade()` compatibility alias. |
-| Strategy package consistency | Partial | `src/strategies/advanced_strategies.py` is canonical; legacy shim kept for compatibility. |
-| Dependency governance | Partial | Shared constraints file added; full CI drift gate pending. |
+| Strategy package consistency | Implemented | `src/strategies/advanced_strategies.py` is canonical; legacy shim retained until 2026-06-30 cleanup. |
+| Dependency governance | Implemented | Shared constraints + `pip check` gate run in `scripts/release_gate.sh`. |
 | Container import parity | Implemented | Docker now includes backend package used by optional runtime imports. |
-| Test modernity (py3.11+) | Partial | Legacy coroutine construct removed in core test fixture. |
+| Test modernity (py3.11+) | Implemented | Legacy coroutine construct removed in core test fixture. |
 | JWT secret safety | Implemented | Production/staging now requires explicit `JWT_SECRET`. |
 | Key memory handling claims | Implemented | Zeroization claim replaced with explicit Python limitations. |
-| End-to-end trade correlation | Partial | `trade_id` added to core trade/result models and payload serialization. |
+| End-to-end trade correlation | Implemented | `trade_id` added to core trade/result models and payload serialization. |
+| Release-critical IM matrix | Implemented | All `release critical = yes` rows have non-scaffold status + unit coverage; gate enforced via `scripts/check_implementation_matrix.py`. |
+| CVaR adaptive caps (IM-027) | Implemented | `CVaRController` in `src/core/risk_manager.py`. |
+| Self-adjusting stop policies (IM-028) | Implemented | `StopPolicyController` in `src/governance/policy_engine.py`. |
+| Risk debt + forced delever (IM-029) | Implemented | `RiskDebtTracker` + `DeleverPlan` in `src/core/risk_manager.py`. |
+| Self-remediation runbooks (IM-037) | Implemented | `RunbookRegistry` in `src/monitoring/hud_server.py`. |
+| Canary releases (IM-038) | Implemented | `CanaryController` in `src/core/feature_flags.py`. |
+| Failure-domain isolation (IM-014/IM-040) | Implemented | `BlastRadiusController` in `src/core/modules.py`. |
+| Per-asset risk templates (IM-017) | Implemented | `AssetUniverse.risk_template()` + category defaults. |
 
 See `ROADMAP.md` for the multi-phase modernization program.
 
