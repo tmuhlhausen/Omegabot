@@ -20,7 +20,13 @@ import logging
 import time
 from typing import Optional
 
-from web3 import AsyncWeb3
+try:
+    from web3 import AsyncWeb3
+except ImportError:  # pragma: no cover - test/runtime fallback
+    class AsyncWeb3:  # type: ignore[override]
+        @staticmethod
+        def to_checksum_address(address: str) -> str:
+            return address
 
 logger = logging.getLogger(__name__)
 

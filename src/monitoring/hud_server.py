@@ -58,8 +58,85 @@ class HUDManager:
         self.commands[name] = handler
 
 
+@dataclass
+class Runbook:
+    """Self-remediation runbook entry."""
+
+    name: str
+    triggers: tuple[str, ...]
+    handler: callable
+    description: str = ""
+
+
+@dataclass
+class RunbookExecution:
+    """Result of executing a runbook handler."""
+
+    name: str
+    triggered_by: str
+    success: bool
+    message: str
+    timestamp: float = field(default_factory=time.time)
+
+
+class RunbookRegistry:
+    """Self-remediation runbook registry (IM-037).
+
+    The engine + monitoring stack publish anomaly tags via ``trigger``. Each
+    registered runbook with a matching trigger is executed and the result is
+    captured for the HUD timeline. Handlers must be idempotent and side-effect
+    contained.
+    """
+
+    def __init__(self) -> None:
+        self._runbooks: dict[str, Runbook] = {}
+        self._history: list[RunbookExecution] = []
+
+    def register(
+        self,
+        name: str,
+        triggers: tuple[str, ...],
+        handler: callable,
+        description: str = "",
+    ) -> Runbook:
+        rb = Runbook(name=name, triggers=triggers, handler=handler, description=description)
+        self._runbooks[name] = rb
+        return rb
+
+    def trigger(self, tag: str, **payload) -> list[RunbookExecution]:
+        results: list[RunbookExecution] = []
+        for rb in self._runbooks.values():
+            if tag not in rb.triggers:
+                continue
+            try:
+                outcome = rb.handler(tag, **payload)
+                msg = str(outcome) if outcome is not None else "ok"
+                exec_result = RunbookExecution(
+                    name=rb.name, triggered_by=tag, success=True, message=msg
+                )
+            except Exception as exc:  # pragma: no cover - exercised via test
+                exec_result = RunbookExecution(
+                    name=rb.name,
+                    triggered_by=tag,
+                    success=False,
+                    message=str(exc)[:200],
+                )
+            self._history.append(exec_result)
+            results.append(exec_result)
+        return results
+
+    @property
+    def history(self) -> list[RunbookExecution]:
+        return list(self._history)
+
+    @property
+    def names(self) -> list[str]:
+        return sorted(self._runbooks.keys())
+
+
 shared_state = HUDState()
 manager = HUDManager()
+runbooks = RunbookRegistry()
 
 
 def run_hud_server(port: int = 8080):

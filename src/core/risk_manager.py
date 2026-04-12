@@ -502,3 +502,160 @@ class RiskManager:
             "telemetry_retry_count": self.state.telemetry_retry_count,
             "degraded_until_ts": round(self.state.degraded_until_ts, 3),
         }
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# CVaR Envelope (IM-027) — adaptive caps based on tail loss telemetry
+# ─────────────────────────────────────────────────────────────────────────────
+
+@dataclass
+class CVaREnvelope:
+    """Resolved CVaR risk envelope for a strategy."""
+
+    cap_usd: float
+    breach: bool
+    cvar_estimate: float
+    rationale: str
+
+
+class CVaRController:
+    """Adaptive CVaR cap controller.
+
+    Maintains a rolling tail-loss buffer (alpha quantile, default 5%) and
+    returns an envelope that scales position size down when realized tail
+    loss approaches the configured ceiling.
+    """
+
+    def __init__(
+        self,
+        *,
+        alpha: float = 0.05,
+        target_cap_usd: float = 1_000.0,
+        ceiling_cap_usd: float = 5_000.0,
+        window: int = 64,
+    ) -> None:
+        if not 0 < alpha < 0.5:
+            raise ValueError("alpha must be in (0, 0.5)")
+        self.alpha = alpha
+        self.target_cap_usd = target_cap_usd
+        self.ceiling_cap_usd = ceiling_cap_usd
+        self.window = window
+        self._losses: list[float] = []
+
+    def update(self, realized_pnl_usd: float) -> None:
+        # only track losses (negative pnl)
+        if realized_pnl_usd < 0:
+            self._losses.append(abs(realized_pnl_usd))
+            if len(self._losses) > self.window:
+                self._losses = self._losses[-self.window :]
+
+    def evaluate(self, requested_cap_usd: float) -> CVaREnvelope:
+        if not self._losses:
+            return CVaREnvelope(
+                cap_usd=min(requested_cap_usd, self.target_cap_usd),
+                breach=False,
+                cvar_estimate=0.0,
+                rationale="cvar_warmup",
+            )
+
+        sorted_losses = sorted(self._losses, reverse=True)
+        tail_size = max(1, int(len(sorted_losses) * self.alpha))
+        tail = sorted_losses[:tail_size]
+        cvar_estimate = sum(tail) / len(tail)
+
+        # scale cap inversely with cvar pressure vs ceiling
+        pressure = min(1.0, cvar_estimate / max(1e-6, self.ceiling_cap_usd))
+        adaptive_cap = self.target_cap_usd * (1.0 - pressure)
+        adaptive_cap = max(0.0, min(adaptive_cap, self.target_cap_usd))
+        cap = min(requested_cap_usd, adaptive_cap)
+        breach = cvar_estimate >= self.ceiling_cap_usd
+        return CVaREnvelope(
+            cap_usd=round(cap, 4),
+            breach=breach,
+            cvar_estimate=round(cvar_estimate, 4),
+            rationale=f"alpha={self.alpha} tail_n={tail_size} pressure={pressure:.2f}",
+        )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Risk Debt + Forced Delever (IM-029)
+# ─────────────────────────────────────────────────────────────────────────────
+
+@dataclass
+class DeleverPlan:
+    """Forced delever plan emitted when risk debt exceeds policy."""
+
+    required: bool
+    repay_usd: float
+    target_health_factor: float
+    rationale: str
+
+
+class RiskDebtTracker:
+    """Tracks risk debt and proposes a forced delever amount.
+
+    Risk debt = realized loss + open exposure premium that exceeds the
+    configured budget. When debt > 0 the tracker computes how much debt
+    repayment is required to bring the projected health factor back to the
+    safe target.
+    """
+
+    def __init__(
+        self,
+        *,
+        loss_budget_usd: float = 100.0,
+        target_health_factor: float = 1.8,
+    ) -> None:
+        self.loss_budget_usd = loss_budget_usd
+        self.target_health_factor = target_health_factor
+        self._debt_usd = 0.0
+
+    @property
+    def debt_usd(self) -> float:
+        return round(self._debt_usd, 4)
+
+    def record_loss(self, loss_usd: float) -> None:
+        if loss_usd > 0:
+            self._debt_usd += loss_usd
+
+    def record_recovery(self, gain_usd: float) -> None:
+        if gain_usd > 0:
+            self._debt_usd = max(0.0, self._debt_usd - gain_usd)
+
+    def evaluate(
+        self,
+        *,
+        current_debt_usd: float,
+        current_health_factor: float,
+    ) -> DeleverPlan:
+        if self._debt_usd <= self.loss_budget_usd and current_health_factor >= self.target_health_factor:
+            return DeleverPlan(
+                required=False,
+                repay_usd=0.0,
+                target_health_factor=self.target_health_factor,
+                rationale="within_budget",
+            )
+
+        # Need to delever — solve for repayment that lifts HF to target
+        # HF_new ≈ HF_cur * debt_cur / (debt_cur - repay)
+        if current_debt_usd <= 0 or current_health_factor <= 0:
+            return DeleverPlan(
+                required=True,
+                repay_usd=max(0.0, self._debt_usd - self.loss_budget_usd),
+                target_health_factor=self.target_health_factor,
+                rationale="no_oncchain_debt",
+            )
+
+        ratio = self.target_health_factor / max(current_health_factor, 0.01)
+        if ratio <= 1.0:
+            # already at or above target, only clear loss debt
+            repay = max(0.0, self._debt_usd - self.loss_budget_usd)
+        else:
+            repay_for_hf = current_debt_usd * (1 - 1.0 / ratio)
+            repay = max(repay_for_hf, self._debt_usd - self.loss_budget_usd)
+        return DeleverPlan(
+            required=True,
+            repay_usd=round(min(repay, current_debt_usd), 4),
+            target_health_factor=self.target_health_factor,
+            rationale=f"debt={self._debt_usd:.2f} hf={current_health_factor:.2f}",
+        )
