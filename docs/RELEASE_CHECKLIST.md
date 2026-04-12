@@ -6,8 +6,12 @@ Use this checklist before every release tag.
 
 ## 1) Code + Tests
 - [x] `pip install -r requirements-dev.txt`
-- [x] `./scripts/release_gate.sh` — all 7 gates green (79 unit tests pass)
+- [x] `./scripts/release_gate.sh` — all 7 gates green (85 unit tests pass:
+      79 core + 6 release metadata)
 - [x] Implementation matrix gate enforced (`scripts/check_implementation_matrix.py`)
+- [x] Release metadata consistency enforced
+      (`tests/test_release_metadata.py` — VERSION ↔ pyproject ↔ LICENSE ↔
+      CHANGELOG ↔ Dockerfile)
 - [ ] Contract changes validated (if any) with local Hardhat test run
       (no Solidity changes in 1.0.0)
 
@@ -18,7 +22,9 @@ Use this checklist before every release tag.
 - [x] Self-adjusting stop policy controller wired (IM-028)
 - [x] Per-asset risk templates wired (IM-017)
 - [ ] API keys/secrets present in target environment (operator step)
-- [ ] Rollback target version identified — previous tag is `0.9.0`
+- [ ] Rollback target version identified (operator step — no prior git tag
+      exists; rollback target is the commit pinned in the operator's current
+      production deployment manifest)
 
 ## 3) Deployment
 - [x] Changelog drafted (`CHANGELOG.md` 1.0.0 section)
