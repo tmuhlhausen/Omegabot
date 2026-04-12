@@ -1,0 +1,38 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "neuralbot-omega"
+version = "1.0.0"
+description = "NeuralBot OMEGA — autonomous DeFi trading runtime with on-chain profit split"
+readme = "README.md"
+license = { file = "LICENSE" }
+requires-python = ">=3.11"
+authors = [
+    { name = "NeuralBot OMEGA contributors" },
+]
+keywords = ["defi", "arbitrum", "aave", "flash-loan", "trading-bot"]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Office/Business :: Financial",
+]
+
+[project.urls]
+Homepage = "https://github.com/tmuhlhausen/Omegabot"
+Changelog = "https://github.com/tmuhlhausen/Omegabot/blob/main/CHANGELOG.md"
+Issues = "https://github.com/tmuhlhausen/Omegabot/issues"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["src*", "backend*"]
+exclude = ["tests*", "contracts*", "web*", "migrations*"]
+
+# pytest config lives in pytest.ini for compatibility with the
+# deterministic test wrapper (scripts/test.sh).
