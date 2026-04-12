@@ -3,7 +3,7 @@ name: release-gate
 on:
   pull_request:
   push:
-    branches: ["main", "master", "work"]
+    branches: ["main", "master", "work", "claude/**"]
 
 jobs:
   release-gate:
@@ -26,3 +26,6 @@ jobs:
         run: |
           chmod +x scripts/test.sh scripts/release_gate.sh
           ./scripts/release_gate.sh
+
+      - name: Verify implementation matrix gate (defensive)
+        run: python scripts/check_implementation_matrix.py
