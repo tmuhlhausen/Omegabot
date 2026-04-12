@@ -19,7 +19,8 @@ import json
 import logging
 import os
 import time
-from typing import Any, Optional
+from dataclasses import dataclass, field
+from typing import Any, Callable, Dict, List, Optional
 
 try:
     import aiohttp
@@ -233,9 +234,6 @@ class PartyKitClient:
 # API productization: telemetry exports (IM-043)
 # ─────────────────────────────────────────────────────────────────────────────
 
-from dataclasses import dataclass, field
-from typing import Callable, Dict, List as _List
-
 
 @dataclass
 class TelemetryExport:
@@ -251,8 +249,11 @@ class TelemetryExport:
     metrics: Dict[str, Any] = field(default_factory=dict)
     timestamp: float = field(default_factory=time.time)
 
-    # Match the partykit key sanitizer so exports never leak secrets.
-    _SECRET_KEYS = ("key", "secret", "password", "nonce", "private", "token")
+    # Mirrors the partykit push_state sanitizer exactly so a trade dict
+    # containing the legitimate ``token_symbol`` / ``token_price`` fields
+    # survives export while real secrets (api_key, user_secret, …) are
+    # dropped.
+    _SECRET_KEYS = ("key", "secret", "password", "nonce", "private")
 
     def sanitized(self) -> dict:
         return {
@@ -283,7 +284,7 @@ class TelemetryExporter:
     _TIER_RANK = {"public": 0, "pro": 1, "enterprise": 2}
 
     def __init__(self) -> None:
-        self._subscribers: _List[tuple[str, Callable[[dict], None]]] = []
+        self._subscribers: List[tuple[str, Callable[[dict], None]]] = []
         self._published: int = 0
         self._last_export: Optional[dict] = None
 

@@ -254,7 +254,6 @@ class ReliabilityScorecard:
     samples: List[bool] = field(default_factory=list)
     total_ok: int = 0
     total_err: int = 0
-    last_status_change_ts: float = 0.0
 
     def record(self, success: bool) -> None:
         self.samples.append(bool(success))

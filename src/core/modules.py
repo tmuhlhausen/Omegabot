@@ -6,6 +6,7 @@ import asyncio
 import logging
 import time
 from dataclasses import dataclass, field
+from typing import Callable, Optional
 
 try:
     from web3 import AsyncWeb3
@@ -288,8 +289,6 @@ class BlastRadiusController:
 # ─────────────────────────────────────────────────────────────────────────────
 # Plugin framework for external alpha (IM-045)
 # ─────────────────────────────────────────────────────────────────────────────
-
-from typing import Any, Callable, Optional
 
 
 @dataclass

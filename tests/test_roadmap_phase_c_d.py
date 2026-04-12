@@ -132,6 +132,28 @@ def test_telemetry_export_redacts_sensitive_keys():
     assert "nonce_value" not in sanitized
 
 
+def test_telemetry_export_preserves_legitimate_token_fields():
+    # Regression: an earlier revision included "token" in the deny list,
+    # which false-positive-redacted the legitimate ``token_symbol`` /
+    # ``token_price`` fields emitted by ``TradeResult.to_dict``. Exports
+    # of trade snapshots must keep ticker metadata.
+    export = TelemetryExport(
+        stream="trades",
+        entitlement="pro",
+        metrics={
+            "token_symbol": "WETH",
+            "token_price": 2500.0,
+            "gross_usd": 3.0,
+            "api_key": "sk-should-not-leak",
+        },
+    )
+    sanitized = export.sanitized()
+    assert sanitized["token_symbol"] == "WETH"
+    assert sanitized["token_price"] == 2500.0
+    assert sanitized["gross_usd"] == 3.0
+    assert "api_key" not in sanitized
+
+
 def test_telemetry_exporter_respects_entitlement_tiers():
     exporter = TelemetryExporter()
     public_records: list[dict] = []
