@@ -231,3 +231,124 @@ class PlatformReporter:
 
 def init_reporter(vault_client=None, http_session=None) -> PlatformReporter:
     return PlatformReporter(vault_client=vault_client, http_session=http_session)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Reliability scorecards (IM-036)
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+@dataclass
+class ReliabilityScorecard:
+    """Rolling SLO attainment record for a single module.
+
+    ``slo_error_budget_pct`` is the maximum fraction of failing samples
+    tolerated before the module is flagged as *breached*. A window of
+    recent samples is kept so the controller can recover as the module
+    stabilizes.
+    """
+
+    module: str
+    slo_error_budget_pct: float = 0.01  # 99% success budget
+    window: int = 200
+    samples: List[bool] = field(default_factory=list)
+    total_ok: int = 0
+    total_err: int = 0
+    last_status_change_ts: float = 0.0
+
+    def record(self, success: bool) -> None:
+        self.samples.append(bool(success))
+        if len(self.samples) > self.window:
+            # Drop the oldest sample so the rolling window stays bounded.
+            dropped = self.samples.pop(0)
+            if dropped:
+                self.total_ok = max(0, self.total_ok - 1)
+            else:
+                self.total_err = max(0, self.total_err - 1)
+        if success:
+            self.total_ok += 1
+        else:
+            self.total_err += 1
+
+    @property
+    def samples_seen(self) -> int:
+        return len(self.samples)
+
+    @property
+    def error_rate(self) -> float:
+        n = len(self.samples)
+        if n == 0:
+            return 0.0
+        return sum(1 for s in self.samples if not s) / n
+
+    @property
+    def success_rate(self) -> float:
+        return 1.0 - self.error_rate
+
+    @property
+    def breached(self) -> bool:
+        # Don't flag on <10 samples — too noisy to be meaningful.
+        if len(self.samples) < 10:
+            return False
+        return self.error_rate > self.slo_error_budget_pct
+
+    def to_dict(self) -> dict:
+        return {
+            "module": self.module,
+            "samples_seen": self.samples_seen,
+            "success_rate": round(self.success_rate, 4),
+            "error_rate": round(self.error_rate, 4),
+            "slo_error_budget_pct": self.slo_error_budget_pct,
+            "breached": self.breached,
+            "total_ok": self.total_ok,
+            "total_err": self.total_err,
+        }
+
+
+class ScorecardRegistry:
+    """Registry of ReliabilityScorecards keyed by module name.
+
+    Production wiring: each long-running module calls ``record(module, ok)``
+    after every operation, and the platform reporter publishes ``summary()``
+    on its periodic flush. The ``breached`` flag is used by the release gate
+    + HUD so SREs see policy violations in the same feed as trades.
+    """
+
+    def __init__(self) -> None:
+        self._cards: dict[str, ReliabilityScorecard] = {}
+
+    def register(
+        self,
+        module: str,
+        *,
+        slo_error_budget_pct: float = 0.01,
+        window: int = 200,
+    ) -> ReliabilityScorecard:
+        card = ReliabilityScorecard(
+            module=module,
+            slo_error_budget_pct=slo_error_budget_pct,
+            window=window,
+        )
+        self._cards[module] = card
+        return card
+
+    def record(self, module: str, success: bool) -> ReliabilityScorecard:
+        card = self._cards.get(module)
+        if card is None:
+            card = self.register(module)
+        card.record(success)
+        return card
+
+    def get(self, module: str) -> Optional[ReliabilityScorecard]:
+        return self._cards.get(module)
+
+    def breached(self) -> List[str]:
+        return [name for name, card in self._cards.items() if card.breached]
+
+    def summary(self) -> dict:
+        return {name: card.to_dict() for name, card in self._cards.items()}
+
+
+# Module-level singleton so any subsystem can publish reliability samples
+# without plumbing the registry through the engine constructor.
+scorecards = ScorecardRegistry()

@@ -39,16 +39,16 @@ Status legend: `scaffold` | `partial` | `prod`.
 | IM-033 | Shadow mode for candidate strategies | `src/core/feature_flags.py`, `src/core/engine.py` | scaffold | untested | shadow-prod divergence | Strategy Eng | no |
 | IM-034 | Profit attribution by signal/path | `src/monitoring/platform_reporter.py` | scaffold | untested | attribution completeness | Data Eng | no |
 | IM-035 | Continuous model benchmark competition | `src/predictive/formula_engine.py`, `src/simulation/digital_twin.py` | scaffold | untested | champion retention duration | Quant Research | no |
-| IM-036 | Reliability scorecards | `src/monitoring/platform_reporter.py` | scaffold | untested | module SLO attainment | Reliability | no |
+| IM-036 | Reliability scorecards | `src/monitoring/platform_reporter.py` | partial | unit (`tests/test_roadmap_phase_c_d.py`) | module SLO attainment | Reliability | no |
 | IM-037 | Self-remediation runbooks | `src/core/engine.py`, `src/monitoring/hud_server.py` | partial | unit (`tests/test_release_critical_matrix.py`) | auto-remediation success rate | SRE | yes |
 | IM-038 | Canary releases for strategy/formula | `src/core/feature_flags.py` | partial | unit (`tests/test_release_critical_matrix.py`) | canary rollback rate | SRE | yes |
 | IM-039 | Cost-aware autoscaling/failover | `src/core/engine.py` | scaffold | untested | failover recovery time | SRE | no |
 | IM-040 | Runtime blast-radius controls | `src/core/modules.py`, `src/core/engine.py` | partial | unit (`tests/test_release_critical_matrix.py`) | fault containment scope | SRE | yes |
 | IM-041 | Policy-as-code deployment gates | `src/governance/policy_engine.py`, `scripts/release_gate.sh` | partial | unit (`tests/test_roadmap_slice2.py`) | policy gate pass/fail fidelity | Governance | yes |
 | IM-042 | Human-in-loop high-risk approvals | `src/governance/policy_engine.py` | partial | unit (`tests/test_release_critical_matrix.py`) | approval SLA | Governance | yes |
-| IM-043 | API productization + telemetry exports | `backend/auth.py`, `src/monitoring/partykit_client.py` | scaffold | untested | API uptime + export lag | Product | no |
+| IM-043 | API productization + telemetry exports | `backend/auth.py`, `src/monitoring/partykit_client.py` | partial | unit (`tests/test_roadmap_phase_c_d.py`) | API uptime + export lag | Product | no |
 | IM-044 | Multi-tenant entitlement model | `backend/auth.py`, `src/core/feature_flags.py` | scaffold | untested | entitlement policy violation count | Product | no |
-| IM-045 | Plugin framework for external alpha | `src/core/modules.py` | scaffold | untested | plugin fault isolation score | Platform | no |
+| IM-045 | Plugin framework for external alpha | `src/core/modules.py` | partial | unit (`tests/test_roadmap_phase_c_d.py`) | plugin fault isolation score | Platform | no |
 | IM-046 | Deterministic release test gate | `scripts/test.sh`, `scripts/release_gate.sh` | prod | script + unit (`tests/test_implementation_matrix_gate.py`) | release gate pass rate | Release Eng | yes |
 | IM-047 | Python compile verification gate | `scripts/release_gate.sh` | prod | script + unit (`tests/test_implementation_matrix_gate.py`) | syntax gate failure rate | Release Eng | yes |
 | IM-048 | Dependency health check gate | `scripts/release_gate.sh`, `scripts/import_healthcheck.py` | partial | script + unit (`tests/test_implementation_matrix_gate.py`) | dependency conflict incidence | Release Eng | yes |

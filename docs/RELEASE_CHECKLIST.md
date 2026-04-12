@@ -6,8 +6,8 @@ Use this checklist before every release tag.
 
 ## 1) Code + Tests
 - [x] `pip install -r requirements-dev.txt`
-- [x] `./scripts/release_gate.sh` — all 7 gates green (85 unit tests pass:
-      79 core + 6 release metadata)
+- [x] `./scripts/release_gate.sh` — all 7 gates green (98 unit tests pass:
+      79 core + 6 release metadata + 13 roadmap Phase C/D closeout)
 - [x] Implementation matrix gate enforced (`scripts/check_implementation_matrix.py`)
 - [x] Release metadata consistency enforced
       (`tests/test_release_metadata.py` — VERSION ↔ pyproject ↔ LICENSE ↔

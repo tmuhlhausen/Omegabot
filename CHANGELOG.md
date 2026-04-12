@@ -28,10 +28,25 @@ implementation matrix IDs (`docs/IMPLEMENTATION_MATRIX.md`).
   history capture.
 - **IM-038** — `CanaryController` in `src/core/feature_flags.py`: stages
   canary rollouts with auto-promote / auto-rollback semantics.
+- **IM-036** — `ReliabilityScorecard` + `ScorecardRegistry` in
+  `src/monitoring/platform_reporter.py`: rolling-window SLO attainment
+  with error-budget breach detection and a process-wide `scorecards`
+  singleton.
+- **IM-043** — `TelemetryExport` + `TelemetryExporter` in
+  `src/monitoring/partykit_client.py`: tenant-aware
+  (public/pro/enterprise) telemetry fan-out with sensitive-key redaction
+  and a process-wide `telemetry_exporter` singleton.
+- **IM-045** — `AlphaPlugin` + `AlphaPluginRegistry` in
+  `src/core/modules.py`: sandboxed external-alpha plugin registry with
+  per-plugin failure counters and automatic disable after
+  `max_failures`.
 - **Test gate** — `tests/test_release_critical_matrix.py` covering 24
   release-critical behaviors across IM-008, IM-012, IM-014, IM-017, IM-021,
   IM-022, IM-023, IM-024, IM-025, IM-027, IM-028, IM-029, IM-037, IM-038,
   IM-040, and IM-042.
+- **Roadmap closeout tests** — `tests/test_roadmap_phase_c_d.py` with 13
+  unit tests covering IM-036, IM-043, and IM-045. All remaining roadmap
+  items in Phases A–E now show ✅ in `ROADMAP.md`.
 
 ### Changed
 

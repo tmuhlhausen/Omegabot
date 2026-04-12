@@ -283,3 +283,107 @@ class BlastRadiusController:
 
     def quarantined(self) -> list[str]:
         return [v.name for v in self._venues.values() if v.quarantined]
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Plugin framework for external alpha (IM-045)
+# ─────────────────────────────────────────────────────────────────────────────
+
+from typing import Any, Callable, Optional
+
+
+@dataclass
+class AlphaPlugin:
+    """External alpha plugin metadata + handler.
+
+    ``handler`` is called with a context dict and returns a numeric score.
+    Plugins are sandboxed: any exception is caught so a faulty plugin
+    cannot crash the engine loop. The registry tracks consecutive failures
+    and disables a plugin after ``max_failures`` to enforce fault
+    isolation (IM-040 blast-radius policy applied to plugin code).
+    """
+
+    name: str
+    handler: Callable[[dict], float]
+    version: str = "0.1"
+    max_failures: int = 3
+    enabled: bool = True
+    failures: int = 0
+    invocations: int = 0
+    last_score: float = 0.0
+    last_error: str = ""
+
+
+class AlphaPluginRegistry:
+    """Registry for user-supplied alpha plugins with fault isolation."""
+
+    def __init__(self) -> None:
+        self._plugins: dict[str, AlphaPlugin] = {}
+
+    def register(
+        self,
+        name: str,
+        handler: Callable[[dict], float],
+        *,
+        version: str = "0.1",
+        max_failures: int = 3,
+    ) -> AlphaPlugin:
+        plugin = AlphaPlugin(
+            name=name,
+            handler=handler,
+            version=version,
+            max_failures=max_failures,
+        )
+        self._plugins[name] = plugin
+        return plugin
+
+    def names(self) -> list[str]:
+        return list(self._plugins.keys())
+
+    def enabled_names(self) -> list[str]:
+        return [n for n, p in self._plugins.items() if p.enabled]
+
+    def get(self, name: str) -> Optional[AlphaPlugin]:
+        return self._plugins.get(name)
+
+    def invoke(self, name: str, context: dict) -> Optional[float]:
+        plugin = self._plugins.get(name)
+        if plugin is None or not plugin.enabled:
+            return None
+        try:
+            score = float(plugin.handler(context))
+        except Exception as exc:
+            plugin.failures += 1
+            plugin.last_error = str(exc)[:120]
+            if plugin.failures >= plugin.max_failures:
+                plugin.enabled = False
+                logger.warning(
+                    "ALPHA_PLUGIN_DISABLED: %s failures=%d err=%s",
+                    name,
+                    plugin.failures,
+                    plugin.last_error,
+                )
+            return None
+        plugin.invocations += 1
+        plugin.last_score = score
+        return score
+
+    def invoke_all(self, context: dict) -> dict[str, float]:
+        results: dict[str, float] = {}
+        for name in list(self._plugins.keys()):
+            score = self.invoke(name, context)
+            if score is not None:
+                results[name] = score
+        return results
+
+    def reset(self, name: str) -> None:
+        plugin = self._plugins.get(name)
+        if plugin is not None:
+            plugin.failures = 0
+            plugin.enabled = True
+            plugin.last_error = ""
+
+
+# Process-wide plugin registry so external alpha can be loaded at runtime
+# without patching the engine constructor.
+alpha_plugins = AlphaPluginRegistry()

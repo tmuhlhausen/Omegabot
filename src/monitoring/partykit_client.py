@@ -227,3 +227,100 @@ class PartyKitClient:
     async def send_trade(self, trade: dict) -> bool:
         """Backward-compatible alias for push_trade()."""
         return await self.push_trade(trade)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# API productization: telemetry exports (IM-043)
+# ─────────────────────────────────────────────────────────────────────────────
+
+from dataclasses import dataclass, field
+from typing import Callable, Dict, List as _List
+
+
+@dataclass
+class TelemetryExport:
+    """Structured telemetry record ready for export to the public API.
+
+    Exports are snapshots (not events) — each record is a point-in-time
+    summary of a named metric stream. The exporter redacts keys that look
+    sensitive using the same deny-list as ``PartyKitClient.push_state``.
+    """
+
+    stream: str
+    entitlement: str  # "public" | "pro" | "enterprise"
+    metrics: Dict[str, Any] = field(default_factory=dict)
+    timestamp: float = field(default_factory=time.time)
+
+    # Match the partykit key sanitizer so exports never leak secrets.
+    _SECRET_KEYS = ("key", "secret", "password", "nonce", "private", "token")
+
+    def sanitized(self) -> dict:
+        return {
+            k: v
+            for k, v in self.metrics.items()
+            if not any(s in k.lower() for s in self._SECRET_KEYS)
+        }
+
+    def to_dict(self) -> dict:
+        return {
+            "stream": self.stream,
+            "entitlement": self.entitlement,
+            "metrics": self.sanitized(),
+            "timestamp": self.timestamp,
+        }
+
+
+class TelemetryExporter:
+    """Tenant-aware telemetry export fan-out.
+
+    Subscribers register for a specific entitlement tier. When a record is
+    published, only subscribers whose tier is *at or above* the record's
+    tier receive it. This is the minimal piece needed so the dashboard,
+    pro-tier API consumers, and enterprise exporters can share a single
+    in-process telemetry bus without leaking data across tiers.
+    """
+
+    _TIER_RANK = {"public": 0, "pro": 1, "enterprise": 2}
+
+    def __init__(self) -> None:
+        self._subscribers: _List[tuple[str, Callable[[dict], None]]] = []
+        self._published: int = 0
+        self._last_export: Optional[dict] = None
+
+    def subscribe(
+        self, tier: str, callback: Callable[[dict], None]
+    ) -> Callable[[dict], None]:
+        if tier not in self._TIER_RANK:
+            raise ValueError(f"unknown tier: {tier}")
+        self._subscribers.append((tier, callback))
+        return callback
+
+    def publish(self, export: TelemetryExport) -> int:
+        record = export.to_dict()
+        self._published += 1
+        self._last_export = record
+        delivered = 0
+        record_rank = self._TIER_RANK[export.entitlement]
+        for tier, callback in self._subscribers:
+            # Subscribers whose tier rank is >= record tier rank may
+            # consume the record. A pro-tier consumer sees public + pro
+            # records, an enterprise consumer sees everything.
+            if self._TIER_RANK[tier] >= record_rank:
+                try:
+                    callback(record)
+                    delivered += 1
+                except Exception as exc:  # pragma: no cover - defensive
+                    logger.warning("telemetry.subscriber_failed: %s", exc)
+        return delivered
+
+    @property
+    def stats(self) -> dict:
+        return {
+            "subscribers": len(self._subscribers),
+            "published": self._published,
+            "last_export": self._last_export,
+        }
+
+
+# Process-wide exporter so modules can publish without wiring plumbing.
+telemetry_exporter = TelemetryExporter()
