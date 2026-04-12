@@ -20,6 +20,7 @@ COPY strategies/ strategies/
 COPY migrations/ migrations/
 COPY alembic.ini ./
 COPY VERSION ./
+COPY LICENSE ./
 
 # Non-root
 USER appuser
