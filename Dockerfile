@@ -9,14 +9,17 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
-# Install Python deps
-COPY requirements.txt .
+# Install Python deps (constraints kept alongside requirements for repeatability)
+COPY requirements.txt constraints-shared.txt ./
 RUN pip install --no-cache-dir --break-system-packages -r requirements.txt
 
-# Copy source
+# Copy source + database migrations + alembic config
 COPY src/ src/
 COPY backend/ backend/
 COPY strategies/ strategies/
+COPY migrations/ migrations/
+COPY alembic.ini ./
+COPY VERSION ./
 
 # Non-root
 USER appuser
